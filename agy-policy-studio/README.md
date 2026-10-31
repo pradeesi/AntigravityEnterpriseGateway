@@ -144,14 +144,14 @@ All runtime behavior is controlled via external environment variables (with safe
 | `FLASK_DEBUG` | `boolean` | `"false"` | Enables Flask reloader during local UI development (`"true"` or `"false"`). |
 | `LOG_LEVEL` | `string` | `"INFO"` | Structured Python logging threshold (`"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`). |
 | `MAX_UPLOAD_MB` | `integer` | `16` | Maximum request size in MiB for imported files or `.zip` policy bundles (`1`–`64`). |
-| `DEFAULT_DEV_USER` | `string` | `"alice"` | Initial workstation developer username populated into path templates. |
+| `DEFAULT_DEV_USER` | `string` | `""` | Optional initial workstation username (empty by default; mandatory in UI/API when configuring or exporting user-scoped `~/.gemini/*` or `~/.jetbrains/*` files). |
 | `REPO_BASELINE_DIR` | `string` | `"../agy-config/configs"` | Path to sibling canonical baseline configs (falls back to embedded templates in standalone containers). |
 
 ---
 
 ## No Hardcoding Rule
 
-- **Zero Hardcoded Credentials or Project IDs**: No API keys, OAuth secrets, proxy passwords, or customer GCP project IDs are hardcoded anywhere in `app.py`, `studio_engine.py`, `validator_engine.py`, `templates/`, or `static/`.
+- **Zero Hardcoded Credentials, Project IDs, or Usernames**: No API keys, OAuth secrets, proxy passwords, customer GCP project IDs, or default workstation usernames are hardcoded anywhere in `app.py`, `studio_engine.py`, `validator_engine.py`, `templates/`, or `static/`. User-scoped files enforce explicit workstation username entry before validation passes or files/ZIP bundles are exported.
 - **Stateless Zero-Persistence Design**: Uploaded configurations, pasted snippets, and generated `.zip` bundles are processed exclusively in memory (`io.BytesIO`) with `Cache-Control: no-store, max-age=0` on all `/api/*` endpoints and zero secret values written to logs or disk.
 - Copy [`.env.example`](./.env.example) to `.env` for local environment customization; `.env` is strictly excluded by [`.gitignore`](./.gitignore).
 
@@ -207,7 +207,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --cpu 1 \
   --min-instances 0 \
   --max-instances 5 \
-  --set-env-vars "LOG_LEVEL=INFO,MAX_UPLOAD_MB=16,DEFAULT_DEV_USER=alice" \
+  --set-env-vars "LOG_LEVEL=INFO,MAX_UPLOAD_MB=16,DEFAULT_DEV_USER=" \
   --no-allow-unauthenticated
 
 # Access securely as an authenticated administrator via gcloud proxy:

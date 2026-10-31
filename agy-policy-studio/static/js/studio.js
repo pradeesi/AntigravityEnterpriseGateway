@@ -60,6 +60,16 @@
     ide: "AGY IDE Plugins",
   };
 
+  const UNSET_USER_TOKEN = "__DEV_USER__";
+  const VALID_DEV_USER_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$/;
+  const PLACEHOLDER_DEV_USER_SET = new Set([
+    "__dev_user__",
+    "{user}",
+    "<user>",
+    "replace_with_user",
+    "replace_with_username",
+  ]);
+
   // Start in clean progressive Step 1 state while keeping default policy values ready
   const initialState = JSON.parse(JSON.stringify(BOOTSTRAP.initial.state));
   initialState.os_list = [];
@@ -90,7 +100,7 @@
     activePermBucket: "allow",
     permFilterQuery: "",
     showSecrets: false,
-    lastDevUser: initialState.dev_user || "alice",
+    lastDevUser: initialState.dev_user || "",
     syncSeq: 0,
     activeAbortController: null,
     codeSyncTimer: null,
@@ -101,6 +111,103 @@
     isPointerDownInForm: false,
     deferredFormRender: false,
   };
+
+  /**
+   * Validate a workstation username string on the client.
+   *
+   * @summary Mirrors backend `validate_workstation_username` rules so Step 1 UI
+   *   feedback, inline warnings, and download guards give instant feedback.
+   * @param {string} rawUser - Candidate workstation username.
+   * @returns {string|null} Human-readable error message when invalid, or `null` when valid.
+   * @throws {never} Never throws.
+   */
+  function validateWorkstationUsernameClient(rawUser) {
+    const cleaned = String(rawUser ?? "").trim();
+    if (!cleaned) {
+      return "Workstation Username is required for user-scoped policy files.";
+    }
+    if (PLACEHOLDER_DEV_USER_SET.has(cleaned.toLowerCase())) {
+      return `Replace placeholder '${cleaned}' with the real workstation username.`;
+    }
+    if (!VALID_DEV_USER_RE.test(cleaned)) {
+      return "Username may only contain letters, digits, '.', '_', or '-' (no spaces or slashes).";
+    }
+    return null;
+  }
+
+  /**
+   * Compute mandatory workstation username status across currently selected files.
+   *
+   * @summary Distinguishes machine-wide files (`admin_settings.json`, `antigravity-gateway.env`,
+   *   `agy_security_guard.*`) from user-scoped home-directory files (`requires_user === true`).
+   * @returns {{required: boolean, devUser: string, userScopedFiles: Array<Object>, isMissing: boolean, isInvalid: boolean, errorMessage: string, isBlocking: boolean}}
+   *   Structured username validation state.
+   * @throws {never} Never throws.
+   */
+  function getWorkstationUserState() {
+    const devUser = String(AppStore.state.dev_user ?? "").trim();
+    const activeIds = AppStore.activeFileIds || [];
+    const userScopedFiles = activeIds
+      .map((fid) => CATALOG_BY_ID[fid])
+      .filter((meta) => Boolean(meta && meta.requires_user));
+    const required = userScopedFiles.length > 0;
+    const syntaxErr = devUser ? validateWorkstationUsernameClient(devUser) : null;
+    const isMissing = !devUser;
+    const isInvalid = Boolean(syntaxErr);
+    let errorMessage = "";
+
+    if (isInvalid) {
+      errorMessage = syntaxErr;
+    } else if (required && isMissing) {
+      const sampleNames = userScopedFiles.slice(0, 2).map((m) => m.filename);
+      const extraCount = userScopedFiles.length - sampleNames.length;
+      const suffix = extraCount > 0 ? ` (+${extraCount} more)` : "";
+      errorMessage = `Required for ${sampleNames.join(", ")}${suffix}.`;
+    }
+
+    return {
+      required,
+      devUser,
+      userScopedFiles,
+      isMissing,
+      isInvalid,
+      errorMessage,
+      isBlocking: (required && (isMissing || isInvalid)) || (!required && isInvalid),
+    };
+  }
+
+  /**
+   * Synchronize Step 1 Workstation Username `Required` badge, `.is-invalid` border,
+   * and inline `#dev-user-feedback` helper message.
+   *
+   * @summary Highlights `#input-dev-user` whenever user-scoped files are active
+   *   and the username is missing or malformed, while staying neutral for system-only files.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function renderWorkstationUserStatus() {
+    const userEl = document.getElementById("input-dev-user");
+    const reqBadge = document.getElementById("dev-user-req-badge");
+    const feedbackEl = document.getElementById("dev-user-feedback");
+    const uState = getWorkstationUserState();
+
+    if (reqBadge) {
+      reqBadge.classList.toggle("d-none", !uState.required);
+    }
+    if (userEl) {
+      userEl.required = uState.required;
+      userEl.classList.toggle("is-invalid", uState.isBlocking);
+    }
+    if (feedbackEl) {
+      if (uState.isBlocking && uState.errorMessage) {
+        feedbackEl.textContent = uState.errorMessage;
+        feedbackEl.classList.remove("d-none");
+      } else {
+        feedbackEl.textContent = "";
+        feedbackEl.classList.add("d-none");
+      }
+    }
+  }
 
   /**
    * Escape untrusted strings before inserting into HTML templates.
@@ -426,7 +533,7 @@
     }
 
     AppStore.state = payload.state;
-    AppStore.lastDevUser = (payload.state && payload.state.dev_user) || "alice";
+    AppStore.lastDevUser = (payload.state && payload.state.dev_user) || "";
     AppStore.availableFileIds = payload.available_file_ids || [];
     AppStore.activeFileIds = payload.active_file_ids || [];
 
@@ -539,7 +646,9 @@
   function renderReferenceGuideModal() {
     const secFilter = AppStore.refModalSection || "all";
     const cliOs = AppStore.refModalCliOs || "linux";
-    const u = AppStore.state.dev_user || "alice";
+    const rawUser = String(AppStore.state.dev_user ?? "").trim();
+    const u = rawUser || UNSET_USER_TOKEN;
+    const userCaptionVal = rawUser || "<unset>";
 
     const secOs = document.getElementById("ref-sec-os");
     const secVer = document.getElementById("ref-sec-versions");
@@ -556,7 +665,7 @@
 
     const userCap = document.getElementById("ref-files-user-caption");
     if (userCap) {
-      userCap.textContent = `Paths & CLI templated for OS: ${OS_DISPLAY[cliOs] || cliOs} · Workstation User: ${u}`;
+      userCap.textContent = `Paths & CLI templated for OS: ${OS_DISPLAY[cliOs] || cliOs} · Workstation User: ${userCaptionVal}`;
     }
 
     // Table 1: Minimum OS Requirements
@@ -772,8 +881,9 @@
 
     const userEl = document.getElementById("input-dev-user");
     if (userEl && document.activeElement !== userEl) {
-      userEl.value = AppStore.state.dev_user || "alice";
+      userEl.value = AppStore.state.dev_user || "";
     }
+    renderWorkstationUserStatus();
 
     const syncSelect = document.getElementById("select-perm-sync");
     if (syncSelect) {
@@ -797,6 +907,7 @@
     }
     step2Card.classList.toggle("d-none", !hasScope);
     if (!hasScope) {
+      renderWorkstationUserStatus();
       return;
     }
 
@@ -905,6 +1016,7 @@
           .join("");
       }
     }
+    renderWorkstationUserStatus();
   }
 
   /**
@@ -929,7 +1041,7 @@
     }
     card.classList.remove("d-none");
 
-    const u = AppStore.state.dev_user || "alice";
+    const u = String(AppStore.state.dev_user ?? "").trim() || UNSET_USER_TOKEN;
 
     const grpBadge = document.getElementById("ref-group-badge");
     const fnLabel = document.getElementById("ref-filename-label");
@@ -1404,7 +1516,7 @@
           .join("")
       : `<div class="text-body-secondary small p-2">No ${escapeHtml(bucket)} rules match current filter.</div>`;
 
-    const u = escapeHtml(AppStore.state.dev_user || "alice");
+    const u = escapeHtml(String(AppStore.state.dev_user ?? "").trim() || UNSET_USER_TOKEN);
 
     return `
       <div class="section-block" data-perm-scope="${escapeHtml(targetScope)}">
@@ -1576,7 +1688,8 @@
       return;
     }
     const fid = AppStore.selectedFileId;
-    if (!fid || !CATALOG_BY_ID[fid]) {
+    const meta = CATALOG_BY_ID[fid];
+    if (!fid || !meta) {
       container.innerHTML = "";
       return;
     }
@@ -1586,6 +1699,23 @@
     const secretType = AppStore.showSecrets ? "text" : "password";
     const eyeCaption = AppStore.showSecrets ? "Hide" : "Show";
     let html = "";
+
+    const uState = getWorkstationUserState();
+    if (meta.requires_user && (uState.isMissing || uState.isInvalid)) {
+      const reasonText = uState.isInvalid
+        ? uState.errorMessage
+        : `<code>${escapeHtml(meta.filename)}</code> deploys inside a developer home directory (<code>~/.gemini/...</code> / <code>~/.jetbrains/...</code>) and requires a valid Workstation Username before export.`;
+      html += `
+        <div id="form-missing-user-banner" class="alert alert-danger d-flex align-items-center justify-content-between gap-2 py-2 px-3 mb-2" style="font-size: 0.76rem;">
+          <div>
+            <strong>Workstation Username Required:</strong> ${reasonText}
+          </div>
+          <button type="button" id="btn-focus-dev-user" class="btn btn-sm btn-danger text-nowrap py-1 px-2" style="font-size: 0.72rem;">
+            Set Username
+          </button>
+        </div>
+      `;
+    }
 
     if (fid === "admin_settings") {
       const gw = s.gateway;
@@ -2223,6 +2353,14 @@
   function bindActiveFormEvents(container, fid) {
     // Always resolve the live state object at event time rather than caching across async compiles
     const getState = () => AppStore.state;
+
+    container.querySelector("#btn-focus-dev-user")?.addEventListener("click", () => {
+      const userEl = document.getElementById("input-dev-user");
+      if (userEl) {
+        userEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        userEl.focus();
+      }
+    });
 
     container.querySelectorAll(".btn-toggle-secret").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -2988,52 +3126,62 @@
   /**
    * Update `AppStore.state.dev_user` and rewrite workspace user home paths in permissions.
    *
-   * @summary Preserves smooth typing/backspacing in `#input-dev-user` without snapping
-   *   mid-keystroke to `"alice"`, restoring `"alice"` only when blurred empty.
+   * @summary Preserves empty username state when `#input-dev-user` is cleared
+   *   (using `UNSET_USER_TOKEN` inside permission path templates so mandatory
+   *   validation flags user-scoped files) and rewrites `/home/<prev>/` and
+   *   `/Users/<prev>/` cleanly whenever a valid username is entered or changed.
    * @param {string} rawValue - Raw string value from `#input-dev-user`.
    * @param {boolean} isBlur - True when triggered on input blur.
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
   function applyWorkstationUserChange(rawValue, isBlur) {
-    const trimmed = rawValue.trim();
-    if (!trimmed && !isBlur) {
-      return;
-    }
-    const nextUser = trimmed || "alice";
-    const oldUser = AppStore.lastDevUser || AppStore.state.dev_user || "alice";
-    if (nextUser === AppStore.state.dev_user) {
-      // Normalize whitespace or empty blur in-place without triggering a form re-render
+    const nextUser = String(rawValue ?? "").trim();
+    const prevUser = String(AppStore.lastDevUser ?? "").trim();
+    const currentUser = String(AppStore.state.dev_user ?? "").trim();
+
+    if (nextUser === currentUser) {
       if (isBlur) {
         const userEl = document.getElementById("input-dev-user");
         if (userEl && userEl.value !== nextUser) {
           userEl.value = nextUser;
         }
       }
+      renderWorkstationUserStatus();
       return;
     }
 
-    if (oldUser !== nextUser) {
-      const swapUserPaths = (arr) =>
-        (arr || []).map((r) =>
-          r
-            .replace(`/home/${oldUser}/`, `/home/${nextUser}/`)
-            .replace(`/Users/${oldUser}/`, `/Users/${nextUser}/`)
-        );
-      ["allow", "ask", "deny"].forEach((b) => {
-        AppStore.state.cli.permissions[b] = swapUserPaths(AppStore.state.cli.permissions[b]);
-        AppStore.state.desktop.permissions[b] = swapUserPaths(AppStore.state.desktop.permissions[b]);
-      });
+    const isNextSyntacticallyValid =
+      !nextUser || validateWorkstationUsernameClient(nextUser) === null;
+
+    if (isNextSyntacticallyValid) {
+      const oldToken = prevUser || UNSET_USER_TOKEN;
+      const nextToken = nextUser || UNSET_USER_TOKEN;
+      if (oldToken !== nextToken) {
+        const swapUserPaths = (arr) =>
+          (arr || []).map((r) =>
+            String(r)
+              .replace(`/home/${oldToken}/`, `/home/${nextToken}/`)
+              .replace(`/Users/${oldToken}/`, `/Users/${nextToken}/`)
+              .replace(`/home/${UNSET_USER_TOKEN}/`, `/home/${nextToken}/`)
+              .replace(`/Users/${UNSET_USER_TOKEN}/`, `/Users/${nextToken}/`)
+          );
+        ["allow", "ask", "deny"].forEach((b) => {
+          AppStore.state.cli.permissions[b] = swapUserPaths(AppStore.state.cli.permissions[b]);
+          AppStore.state.desktop.permissions[b] = swapUserPaths(AppStore.state.desktop.permissions[b]);
+        });
+      }
+      AppStore.lastDevUser = nextUser;
     }
 
     AppStore.state.dev_user = nextUser;
-    AppStore.lastDevUser = nextUser;
     if (isBlur) {
       const userEl = document.getElementById("input-dev-user");
       if (userEl && userEl.value !== nextUser) {
         userEl.value = nextUser;
       }
     }
+    renderWorkstationUserStatus();
     scheduleFormCompile(true, { keepCurrentUnparsed: true });
   }
 
@@ -3416,14 +3564,42 @@
       if (!meta) {
         return;
       }
+      const devUser = String(AppStore.state.dev_user ?? "").trim();
+      if (meta.requires_user) {
+        const userErr = validateWorkstationUsernameClient(devUser);
+        if (userErr) {
+          renderWorkstationUserStatus();
+          const userEl = document.getElementById("input-dev-user");
+          userEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+          userEl?.focus();
+          showToast(
+            `Workstation Username is required before exporting '${meta.filename}'.`,
+            "danger"
+          );
+          return;
+        }
+      }
       try {
         const resp = await fetch("/api/download-file", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_id: fid, content: AppStore.files[fid] || "" }),
+          body: JSON.stringify({
+            file_id: fid,
+            content: AppStore.files[fid] || "",
+            dev_user: devUser,
+          }),
         });
         if (!resp.ok) {
-          throw new Error("Failed to download file");
+          let errMsg = "Failed to download file";
+          try {
+            const errJson = await resp.json();
+            if (errJson && errJson.error) {
+              errMsg = errJson.error;
+            }
+          } catch (_ignore) {
+            // Keep default fallback message when body is non-JSON
+          }
+          throw new Error(errMsg);
         }
         const blob = await resp.blob();
         triggerBrowserDownload(blob, meta.filename);
@@ -3439,6 +3615,15 @@
       if (!AppStore.activeFileIds.length) {
         return;
       }
+      const uState = getWorkstationUserState();
+      if (uState.isBlocking) {
+        renderWorkstationUserStatus();
+        const userEl = document.getElementById("input-dev-user");
+        userEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+        userEl?.focus();
+        showToast(uState.errorMessage || "Enter a valid Workstation Username before exporting.", "danger");
+        return;
+      }
       try {
         const resp = await fetch("/api/download-zip", {
           method: "POST",
@@ -3446,7 +3631,16 @@
           body: JSON.stringify({ state: AppStore.state }),
         });
         if (!resp.ok) {
-          throw new Error("Failed to build MDM ZIP bundle");
+          let errMsg = "Failed to build MDM ZIP bundle";
+          try {
+            const errJson = await resp.json();
+            if (errJson && errJson.error) {
+              errMsg = errJson.error;
+            }
+          } catch (_ignore) {
+            // Keep default fallback message when body is non-JSON
+          }
+          throw new Error(errMsg);
         }
         const blob = await resp.blob();
         triggerBrowserDownload(blob, "antigravity-mdm-policy-bundle.zip");

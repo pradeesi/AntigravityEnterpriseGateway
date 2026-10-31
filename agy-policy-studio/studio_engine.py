@@ -29,7 +29,13 @@ import re
 from typing import Any
 import zipfile
 
-from validator_engine import detect_file_type, validate_bundle
+from validator_engine import (
+    UNSET_DEV_USER_TOKEN,
+    USER_SCOPED_FILE_IDS,
+    detect_file_type,
+    validate_bundle,
+    validate_workstation_username,
+)
 
 ALL_OS = ["linux", "macos", "windows"]
 ALL_SURFACES = ["cli", "desktop", "web", "ide"]
@@ -58,6 +64,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "admin_settings.json",
         "short_label": "01 · admin_settings.json",
         "language": "json",
+        "requires_user": False,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["cli", "desktop", "web", "ide"],
         "surface_details": [
@@ -91,6 +98,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "antigravity-gateway.env",
         "short_label": "01b · antigravity-gateway.env",
         "language": "env",
+        "requires_user": False,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["cli", "desktop", "web", "ide"],
         "surface_details": [
@@ -124,6 +132,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "settings.json",
         "short_label": "02 · settings.json (CLI)",
         "language": "json",
+        "requires_user": True,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["cli", "ide"],
         "surface_details": [
@@ -155,6 +164,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "config.json",
         "short_label": "03 · config.json (Desktop/Hub)",
         "language": "json",
+        "requires_user": True,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["desktop", "web"],
         "surface_details": [
@@ -185,6 +195,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "browserAllowlist.txt",
         "short_label": "04 · browserAllowlist.txt",
         "language": "text",
+        "requires_user": True,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["desktop", "web"],
         "surface_details": [
@@ -215,6 +226,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "mcp_config.json",
         "short_label": "05 · mcp_config.json",
         "language": "json",
+        "requires_user": True,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["cli", "desktop", "web", "ide"],
         "surface_details": [
@@ -247,6 +259,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "hooks.json",
         "short_label": "06 · hooks.json",
         "language": "json",
+        "requires_user": True,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["cli", "desktop", "web", "ide"],
         "surface_details": [
@@ -279,6 +292,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "agy_security_guard.sh",
         "short_label": "07a · agy_security_guard.sh",
         "language": "bash",
+        "requires_user": False,
         "os": ["linux", "macos"],
         "surfaces": ["cli", "desktop", "web", "ide"],
         "surface_details": [
@@ -310,6 +324,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "agy_security_guard.ps1",
         "short_label": "07b · agy_security_guard.ps1",
         "language": "powershell",
+        "requires_user": False,
         "os": ["windows"],
         "surfaces": ["cli", "desktop", "web", "ide"],
         "surface_details": [
@@ -341,6 +356,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "acp.json",
         "short_label": "08a · acp.json (JetBrains/Zed)",
         "language": "json",
+        "requires_user": True,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["ide"],
         "surface_details": [
@@ -371,6 +387,7 @@ FILE_CATALOG: list[dict[str, Any]] = [
         "filename": "antigravity-acp-settings.json",
         "short_label": "08b · antigravity-acp/settings.json",
         "language": "json",
+        "requires_user": True,
         "os": ["linux", "macos", "windows"],
         "surfaces": ["ide"],
         "surface_details": [
@@ -397,6 +414,51 @@ FILE_CATALOG: list[dict[str, Any]] = [
 ]
 
 FILE_CATALOG_BY_ID: dict[str, dict[str, Any]] = {item["id"]: item for item in FILE_CATALOG}
+
+
+def require_valid_user_for_files(file_ids: list[str], dev_user: str) -> None:
+    """Enforce a valid Workstation Username whenever user-scoped files are targeted.
+
+    Summary:
+        Blocks export or archive generation when any file in `file_ids` deploys
+        into a developer home directory (`requires_user == True`) while
+        `dev_user` is blank, placeholder, or syntactically invalid.
+    Parameters:
+        file_ids (list[str]): Active file identifiers being exported.
+        dev_user (str): Candidate workstation username from studio state.
+    Return Value:
+        None.
+    Exceptions/Errors:
+        ValueError: Raised with a descriptive message listing affected filenames
+        if `dev_user` is missing or invalid.
+    """
+    user_files = [
+        FILE_CATALOG_BY_ID[fid]["filename"]
+        for fid in file_ids
+        if fid in USER_SCOPED_FILE_IDS and fid in FILE_CATALOG_BY_ID
+    ]
+    if not user_files:
+        cleaned_opt = (dev_user or "").strip()
+        if cleaned_opt and cleaned_opt not in {UNSET_DEV_USER_TOKEN, "{user}", "<username>", "<user>"}:
+            opt_err = validate_workstation_username(cleaned_opt)
+            if opt_err is not None:
+                raise ValueError(opt_err)
+        return
+
+    err = validate_workstation_username(dev_user)
+    if err is not None:
+        joined = ", ".join(user_files)
+        if not (dev_user or "").strip() or (dev_user or "").strip() in {
+            UNSET_DEV_USER_TOKEN,
+            "{user}",
+            "<username>",
+            "<user>",
+        }:
+            raise ValueError(
+                f"Workstation Username is required to export user-scoped policy file(s): {joined}."
+            )
+        raise ValueError(f"{err} (Required by: {joined})")
+
 
 REFERENCE_GUIDE: dict[str, list[dict[str, str]]] = {
     "os_requirements": [
@@ -570,21 +632,22 @@ DEFAULT_MODELS_LIST: list[dict[str, str]] = [
 ]
 
 
-def _default_balanced_permissions(dev_user: str) -> dict[str, list[str]]:
+def _default_balanced_permissions(dev_user: str = "") -> dict[str, list[str]]:
     """Build the default cross-OS balanced allow/ask/deny permission ruleset.
 
     Summary:
         Produces a clean, scannable enterprise baseline that works across Linux
         (`exebox`), macOS (`sandbox-exec`), and Windows (`RequiresExactMatch`
-        PowerShell regex companions).
+        PowerShell regex companions). Uses `UNSET_DEV_USER_TOKEN` when `dev_user`
+        has not yet been specified so mandatory username validation can flag it.
     Parameters:
-        dev_user (str): Target workstation developer username.
+        dev_user (str): Target workstation developer username (empty if unset).
     Return Value:
         dict[str, list[str]]: Dictionary with `allow`, `ask`, and `deny` arrays.
     Exceptions/Errors:
         None.
     """
-    u = dev_user.strip() or "alice"
+    u = (dev_user or "").strip() or UNSET_DEV_USER_TOKEN
     return {
         "allow": [
             "command(echo)",
@@ -662,22 +725,27 @@ def _default_balanced_permissions(dev_user: str) -> dict[str, list[str]]:
     }
 
 
-def build_default_state(dev_user: str = "alice") -> dict[str, Any]:
+def build_default_state(dev_user: str | None = None) -> dict[str, Any]:
     """Create the initial Balanced Enterprise studio state dictionary.
 
     Summary:
         Returns a complete JSON-serializable state model covering OS & surface
         selection, Gateway settings, CLI/Desktop sandbox policies, permissions,
         browser allowlist, MCP servers, hooks, ACP IDE settings, and round-trip
-        custom key storage.
+        custom key storage. Leaves `dev_user` empty unless explicitly provided
+        or configured via `DEFAULT_DEV_USER`.
     Parameters:
-        dev_user (str): Default developer workstation username.
+        dev_user (str | None): Optional workstation developer username.
     Return Value:
         dict[str, Any]: Canonical studio state dictionary.
     Exceptions/Errors:
         None.
     """
-    user_clean = (dev_user or os.getenv("DEFAULT_DEV_USER", "alice")).strip() or "alice"
+    user_clean = (
+        os.getenv("DEFAULT_DEV_USER", "").strip()
+        if dev_user is None
+        else dev_user.strip()
+    )
     perms = _default_balanced_permissions(user_clean)
 
     return {
@@ -914,15 +982,16 @@ def _resolve_repo_baseline_dir(custom_dir: str | None = None) -> Path | None:
     return None
 
 
-def load_preset_state(preset_id: str, dev_user: str = "alice") -> dict[str, Any]:
+def load_preset_state(preset_id: str, dev_user: str = "") -> dict[str, Any]:
     """Build a complete studio state initialized from a named preset or recipe.
 
     Summary:
         Generates any of the 4 core presets or 7 curated enterprise recipes from
-        `ADMIN_POLICY_EXAMPLES.md` with clean, zero-placeholder configuration.
+        `ADMIN_POLICY_EXAMPLES.md`. Preserves an empty `dev_user` when none is
+        supplied so mandatory username enforcement flags user-scoped files.
     Parameters:
         preset_id (str): Identifier from `PRESET_METADATA`.
-        dev_user (str): Target workstation developer username.
+        dev_user (str): Target workstation developer username (empty if unset).
     Return Value:
         dict[str, Any]: Fully populated studio state dictionary.
     Exceptions/Errors:
@@ -932,8 +1001,9 @@ def load_preset_state(preset_id: str, dev_user: str = "alice") -> dict[str, Any]
     if preset_id not in valid_ids:
         raise ValueError(f"Unknown preset identifier: {preset_id}")
 
-    u = (dev_user or "alice").strip() or "alice"
-    state = build_default_state(dev_user=u)
+    user_clean = (dev_user or "").strip()
+    u = user_clean or UNSET_DEV_USER_TOKEN
+    state = build_default_state(dev_user=user_clean)
     state["active_preset"] = preset_id
 
     if preset_id == "balanced":
@@ -2010,7 +2080,7 @@ def parse_file_into_state(
 def build_per_file_admin_commands(
     file_id: str,
     os_list: list[str],
-    dev_user: str = "alice",
+    dev_user: str = "",
 ) -> dict[str, dict[str, str]]:
     """Generate manual file permission, lock, and unlock CLI commands for one file.
 
@@ -2018,12 +2088,13 @@ def build_per_file_admin_commands(
         Produces single-file OS deployment, ownership/permission (`chown`/`chmod`),
         `MarshalSparse` pre-init (for `cli_settings`), BOM-free UTF-8 write
         guidance (Windows), and kernel immutability (`chattr +i`, `chflags schg`,
-        `attrib +R` + `icacls /deny`) commands displayed in the Left-Panel File
-        Reference Card.
+        `attrib +R` + `icacls /deny`) commands displayed in the Right-Panel
+        Manual Lock / Unlock drawer. System-wide `ProgramData` files omit
+        `$DevUser` when no workstation username is configured.
     Parameters:
         file_id (str): Canonical studio file identifier from `FILE_CATALOG`.
         os_list (list[str]): Selected operating systems.
-        dev_user (str): Target workstation developer username.
+        dev_user (str): Target workstation developer username (empty if unset).
     Return Value:
         dict[str, dict[str, str]]: Map of `os -> {"lock": str, "unlock": str}`
         for each applicable OS in `os_list`.
@@ -2033,7 +2104,8 @@ def build_per_file_admin_commands(
     meta = FILE_CATALOG_BY_ID.get(file_id)
     if not meta:
         return {}
-    u = (dev_user or "alice").strip() or "alice"
+    user_clean = (dev_user or "").strip()
+    u = user_clean or UNSET_DEV_USER_TOKEN
     per_os: dict[str, dict[str, str]] = {}
 
     if "linux" in os_list and "linux" in meta["os"]:
@@ -2116,32 +2188,51 @@ def build_per_file_admin_commands(
             win_raw = meta["paths"]["windows"].replace("{user}", u)
             win_target = win_raw.split("  (")[0].strip()
             win_parent = win_target.rsplit("\\", 1)[0]
-            reader_principal = "Users" if win_target.startswith("C:\\ProgramData") else f"$($DevUser)"
+            is_program_data = win_target.startswith("C:\\ProgramData")
             bom_note = (
                 "# Write UTF-8 WITHOUT BOM (PowerShell 5.1 Set-Content -Encoding UTF8 adds fatal BOM!)\n"
                 "# [System.IO.File]::WriteAllText($Target, $JsonContent, (New-Object System.Text.UTF8Encoding($false)))\n\n"
                 if meta["language"] == "json"
                 else ""
             )
-            per_os["windows"] = {
-                "lock": (
-                    f'# Elevated PowerShell: Set ReadOnly BEFORE non-SYNCHRONIZE Deny ACL\n'
-                    f'$DevUser = "{u}"\n'
-                    f'$Target = "{win_target}"\n'
-                    f'New-Item -ItemType Directory -Force -Path "{win_parent}" | Out-Null\n'
-                    f"{bom_note}"
-                    f"attrib.exe +R $Target\n"
-                    f'icacls.exe $Target /inheritance:r /grant:r "SYSTEM:(F)" "Administrators:(F)" "{reader_principal}:(R,RX)" /deny "$($DevUser):(WD,AD,WEA,WA,DE,WDAC,WO)" | Out-Null\n'
-                    f"icacls.exe $Target"
-                ),
-                "unlock": (
-                    f"# Elevated PowerShell: Remove Deny ACL BEFORE clearing ReadOnly attribute\n"
-                    f'$DevUser = "{u}"\n'
-                    f'$Target = "{win_target}"\n'
-                    f"icacls.exe $Target /remove:d $DevUser | Out-Null\n"
-                    f"attrib.exe -R $Target"
-                ),
-            }
+            if is_program_data and not user_clean:
+                per_os["windows"] = {
+                    "lock": (
+                        f"# Elevated PowerShell: Machine-wide ProgramData ReadOnly + SYSTEM/Administrators ACL\n"
+                        f'$Target = "{win_target}"\n'
+                        f'New-Item -ItemType Directory -Force -Path "{win_parent}" | Out-Null\n'
+                        f"{bom_note}"
+                        f"attrib.exe +R $Target\n"
+                        f'icacls.exe $Target /inheritance:r /grant:r "SYSTEM:(F)" "Administrators:(F)" "Users:(R,RX)" | Out-Null\n'
+                        f"icacls.exe $Target"
+                    ),
+                    "unlock": (
+                        f"# Elevated PowerShell: Clear ReadOnly attribute prior to maintenance updates\n"
+                        f'$Target = "{win_target}"\n'
+                        f"attrib.exe -R $Target"
+                    ),
+                }
+            else:
+                reader_principal = "Users" if is_program_data else "$($DevUser)"
+                per_os["windows"] = {
+                    "lock": (
+                        f"# Elevated PowerShell: Set ReadOnly BEFORE non-SYNCHRONIZE Deny ACL\n"
+                        f'$DevUser = "{u}"\n'
+                        f'$Target = "{win_target}"\n'
+                        f'New-Item -ItemType Directory -Force -Path "{win_parent}" | Out-Null\n'
+                        f"{bom_note}"
+                        f"attrib.exe +R $Target\n"
+                        f'icacls.exe $Target /inheritance:r /grant:r "SYSTEM:(F)" "Administrators:(F)" "{reader_principal}:(R,RX)" /deny "$($DevUser):(WD,AD,WEA,WA,DE,WDAC,WO)" | Out-Null\n'
+                        f"icacls.exe $Target"
+                    ),
+                    "unlock": (
+                        f"# Elevated PowerShell: Remove Deny ACL BEFORE clearing ReadOnly attribute\n"
+                        f'$DevUser = "{u}"\n'
+                        f'$Target = "{win_target}"\n'
+                        f"icacls.exe $Target /remove:d $DevUser | Out-Null\n"
+                        f"attrib.exe -R $Target"
+                    ),
+                }
 
     return per_os
 
@@ -2149,7 +2240,7 @@ def build_per_file_admin_commands(
 def build_admin_lock_commands(
     os_list: list[str],
     surfaces: list[str],
-    dev_user: str = "alice",
+    dev_user: str = "",
     active_file_ids: list[str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Generate copy-pasteable OS root/admin deployment, lock, and unlock CLI blocks.
@@ -2162,20 +2253,22 @@ def build_admin_lock_commands(
     Parameters:
         os_list (list[str]): Selected operating systems.
         surfaces (list[str]): Selected Antigravity surfaces.
-        dev_user (str): Target workstation developer username.
+        dev_user (str): Target workstation developer username (empty if unset).
         active_file_ids (list[str] | None): Optional subset of selected file IDs.
     Return Value:
         dict[str, dict[str, str]]: Map of `os -> {"lock": str, "unlock": str}`.
     Exceptions/Errors:
         None.
     """
-    u = (dev_user or "alice").strip() or "alice"
+    user_clean = (dev_user or "").strip()
+    u = user_clean or UNSET_DEV_USER_TOKEN
     resolved_ids = (
         list(active_file_ids)
         if active_file_ids is not None
         else get_active_file_ids(os_list, surfaces)
     )
     id_set = set(resolved_ids)
+    has_user_scoped = bool(id_set.intersection(USER_SCOPED_FILE_IDS))
     commands: dict[str, dict[str, str]] = {}
 
     if "linux" in os_list:
@@ -2279,30 +2372,53 @@ def build_admin_lock_commands(
         win_files = [p for fid, p in win_map.items() if fid in id_set]
         if win_files:
             win_array = ",\n  ".join(f'"{p}"' for p in win_files)
-            commands["windows"] = {
-                "lock": (
-                    f"# Elevated PowerShell: BOM-free UTF-8 + ReadOnly BEFORE non-SYNCHRONIZE Deny ACL\n"
-                    f"$DevUser = \"{u}\"\n"
-                    f"$Targets = @(\n  {win_array}\n)\n"
-                    f"foreach ($File in $Targets) {{\n"
-                    f"  if (Test-Path $File) {{\n"
-                    f"    attrib.exe +R $File\n"
-                    f"    icacls.exe $File /inheritance:r /grant:r \"SYSTEM:(F)\" \"Administrators:(F)\" \"$($DevUser):(R,RX)\" /deny \"$($DevUser):(WD,AD,WEA,WA,DE,WDAC,WO)\" | Out-Null\n"
-                    f"  }}\n"
-                    f"}}"
-                ),
-                "unlock": (
-                    f"# Elevated PowerShell: Remove Deny ACL BEFORE clearing ReadOnly attribute\n"
-                    f"$DevUser = \"{u}\"\n"
-                    f"$Targets = @(\n  {win_array}\n)\n"
-                    f"foreach ($File in $Targets) {{\n"
-                    f"  if (Test-Path $File) {{\n"
-                    f"    icacls.exe $File /remove:d $DevUser | Out-Null\n"
-                    f"    attrib.exe -R $File\n"
-                    f"  }}\n"
-                    f"}}"
-                ),
-            }
+            if not user_clean and not has_user_scoped:
+                commands["windows"] = {
+                    "lock": (
+                        f"# Elevated PowerShell: Machine-wide ProgramData ReadOnly + SYSTEM/Administrators ACL\n"
+                        f"$Targets = @(\n  {win_array}\n)\n"
+                        f"foreach ($File in $Targets) {{\n"
+                        f"  if (Test-Path $File) {{\n"
+                        f"    attrib.exe +R $File\n"
+                        f"    icacls.exe $File /inheritance:r /grant:r \"SYSTEM:(F)\" \"Administrators:(F)\" \"Users:(R,RX)\" | Out-Null\n"
+                        f"  }}\n"
+                        f"}}"
+                    ),
+                    "unlock": (
+                        f"# Elevated PowerShell: Clear ReadOnly attribute prior to maintenance updates\n"
+                        f"$Targets = @(\n  {win_array}\n)\n"
+                        f"foreach ($File in $Targets) {{\n"
+                        f"  if (Test-Path $File) {{\n"
+                        f"    attrib.exe -R $File\n"
+                        f"  }}\n"
+                        f"}}"
+                    ),
+                }
+            else:
+                commands["windows"] = {
+                    "lock": (
+                        f"# Elevated PowerShell: BOM-free UTF-8 + ReadOnly BEFORE non-SYNCHRONIZE Deny ACL\n"
+                        f"$DevUser = \"{u}\"\n"
+                        f"$Targets = @(\n  {win_array}\n)\n"
+                        f"foreach ($File in $Targets) {{\n"
+                        f"  if (Test-Path $File) {{\n"
+                        f"    attrib.exe +R $File\n"
+                        f"    icacls.exe $File /inheritance:r /grant:r \"SYSTEM:(F)\" \"Administrators:(F)\" \"$($DevUser):(R,RX)\" /deny \"$($DevUser):(WD,AD,WEA,WA,DE,WDAC,WO)\" | Out-Null\n"
+                        f"  }}\n"
+                        f"}}"
+                    ),
+                    "unlock": (
+                        f"# Elevated PowerShell: Remove Deny ACL BEFORE clearing ReadOnly attribute\n"
+                        f"$DevUser = \"{u}\"\n"
+                        f"$Targets = @(\n  {win_array}\n)\n"
+                        f"foreach ($File in $Targets) {{\n"
+                        f"  if (Test-Path $File) {{\n"
+                        f"    icacls.exe $File /remove:d $DevUser | Out-Null\n"
+                        f"    attrib.exe -R $File\n"
+                        f"  }}\n"
+                        f"}}"
+                    ),
+                }
 
     return commands
 
@@ -2316,9 +2432,9 @@ def compile_studio_state(state: dict[str, Any]) -> dict[str, Any]:
     Summary:
         Single stateless orchestration pass invoked by `POST /api/compile`,
         `POST /api/sync-code`, `POST /api/autofix`, and `POST /api/import`.
-        Supports both progressive step-by-step selection (`os_list == []`,
-        `surfaces == []`, or `selected_file_ids` subset) and full-catalog API
-        defaults when `selected_file_ids` is `None`.
+        Preserves empty `dev_user` when unset so mandatory username validation
+        flags user-scoped files, and automatically substitutes any
+        `__DEV_USER__` tokens in permission rules once a valid username is supplied.
     Parameters:
         state (dict[str, Any]): Current structured studio state.
     Return Value:
@@ -2339,11 +2455,29 @@ def compile_studio_state(state: dict[str, Any]) -> dict[str, Any]:
     else:
         surfaces = list(ALL_SURFACES)
 
-    dev_user = (str(state.get("dev_user", "alice")).strip()) or "alice"
+    dev_user = str(state.get("dev_user", "") or "").strip()
 
     state["os_list"] = os_list
     state["surfaces"] = surfaces
     state["dev_user"] = dev_user
+
+    # When a valid workstation username is set, substitute any remaining __DEV_USER__ tokens in permissions
+    if dev_user and validate_workstation_username(dev_user) is None:
+        for surface_key in ("cli", "desktop"):
+            surf_cfg = state.get(surface_key)
+            if isinstance(surf_cfg, dict) and isinstance(surf_cfg.get("permissions"), dict):
+                perms = surf_cfg["permissions"]
+                for bucket in ("allow", "ask", "deny"):
+                    rules = perms.get(bucket)
+                    if isinstance(rules, list):
+                        perms[bucket] = [
+                            str(r)
+                            .replace(f"/home/{UNSET_DEV_USER_TOKEN}/", f"/home/{dev_user}/")
+                            .replace(f"/Users/{UNSET_DEV_USER_TOKEN}/", f"/Users/{dev_user}/")
+                            .replace("/home/{user}/", f"/home/{dev_user}/")
+                            .replace("/Users/{user}/", f"/Users/{dev_user}/")
+                            for r in rules
+                        ]
 
     available_ids = get_active_file_ids(os_list, surfaces, allow_empty=True)
     raw_selected = state.get("selected_file_ids")
@@ -2389,7 +2523,7 @@ def compile_studio_state(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _archive_rel_paths_for_os(file_id: str, target_os: str, dev_user: str) -> list[str]:
+def _archive_rel_paths_for_os(file_id: str, target_os: str, dev_user: str = "") -> list[str]:
     """Map a canonical `file_id` + OS to exact relative archive paths in the MDM ZIP.
 
     Summary:
@@ -2398,13 +2532,13 @@ def _archive_rel_paths_for_os(file_id: str, target_os: str, dev_user: str) -> li
     Parameters:
         file_id (str): Canonical studio file identifier.
         target_os (str): `"linux"`, `"macos"`, or `"windows"`.
-        dev_user (str): Workstation developer username.
+        dev_user (str): Workstation developer username (empty if system-only).
     Return Value:
         list[str]: Relative paths inside the `.zip` archive.
     Exceptions/Errors:
         None.
     """
-    u = dev_user.strip() or "alice"
+    u = (dev_user or "").strip() or UNSET_DEV_USER_TOKEN
     if target_os == "linux":
         mapping = {
             "admin_settings": ["linux/etc/antigravity/admin_settings.json"],
@@ -2457,23 +2591,36 @@ def build_mdm_zip_bundle(state: dict[str, Any]) -> bytes:
     """Create a complete BOM-free UTF-8 MDM `.zip` bundle in memory.
 
     Summary:
-        Renders all active files for the selected OSes and surfaces, adapts
-        OS-specific line endings (LF for POSIX, CRLF for `.ps1` on Windows, zero
-        UTF-8 BOM everywhere), includes OS lock/unlock scripts, and returns raw
-        `.zip` archive bytes.
+        Enforces mandatory workstation username validation whenever any active
+        file targets user-scoped paths (`~/.gemini/*`, `~/.jetbrains/*`), renders
+        all active files for the selected OSes and surfaces, adapts OS-specific
+        line endings, includes OS lock/unlock scripts, and returns raw `.zip` bytes.
     Parameters:
         state (dict[str, Any]): Current structured studio state.
     Return Value:
         bytes: In-memory `.zip` archive payload.
     Exceptions/Errors:
-        None.
+        ValueError: If any active file requires a workstation username and
+        `dev_user` is missing, invalid, or leaves unreplaced `__DEV_USER__` tokens.
     """
     compiled = compile_studio_state(copy.deepcopy(state))
     files_map: dict[str, str] = compiled["files"]
+    active_ids: list[str] = compiled["active_file_ids"]
     os_list: list[str] = compiled["state"]["os_list"]
     surfaces: list[str] = compiled["state"]["surfaces"]
     dev_user: str = compiled["state"]["dev_user"]
     admin_cli: dict[str, dict[str, str]] = compiled["admin_cli"]
+
+    # Enforce mandatory workstation username when user-scoped files are included
+    require_valid_user_for_files(active_ids, dev_user)
+    for fid in active_ids:
+        if fid in USER_SCOPED_FILE_IDS:
+            content = files_map.get(fid, "")
+            if UNSET_DEV_USER_TOKEN in content or "{user}" in content:
+                fname = FILE_CATALOG_BY_ID[fid]["filename"]
+                raise ValueError(
+                    f"File '{fname}' still contains an unreplaced '{UNSET_DEV_USER_TOKEN}' username placeholder."
+                )
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -2536,12 +2683,13 @@ def build_mdm_zip_bundle(state: dict[str, Any]) -> bytes:
             ).replace("\n", "\r\n")
             zf.writestr("scripts/lock_windows.ps1", win_script.encode("utf-8"))
 
+        user_display = f"`{dev_user}`" if dev_user else "N/A (System-wide files only)"
         readme_lines = [
             "# Antigravity Enterprise MDM Policy Bundle",
             "",
             f"- **Selected OS Targets**: {', '.join(OS_LABELS[o] for o in os_list)}",
             f"- **Selected Surfaces**: {', '.join(SURFACE_LABELS[s] for s in surfaces)}",
-            f"- **Target Workstation User**: `{dev_user}`",
+            f"- **Target Workstation User**: {user_display}",
             "- **Encoding Guarantee**: All JSON, `.env`, `.txt`, and script files are encoded as **UTF-8 without BOM**.",
             "",
             "## Deployment Order",
@@ -2567,7 +2715,9 @@ def import_archive_or_files(
     Summary:
         Inspects raw bytes for leading UTF-8 BOM (`0xEF 0xBB 0xBF`), unpacks any
         `.zip` archives in memory (with zip-slip/size bounds), auto-detects each
-        file's canonical slot, updates `state`, and validates all imported files.
+        file's canonical slot, infers a valid workstation username from archive
+        paths or permission rules when `dev_user` is blank, updates `state`, and
+        validates all imported files.
     Parameters:
         uploaded_items (list[tuple[str, bytes]]): List of `(filename, raw_bytes)`.
         current_state (dict[str, Any]): Current structured studio state.
@@ -2611,9 +2761,31 @@ def import_archive_or_files(
                 raise ValueError("Uploaded files exceed 32 MiB safety limit.")
             expanded_entries.append((fname, fbytes))
 
+    inferred_user = ""
     for entry_name, entry_bytes in expanded_entries:
+        if not inferred_user:
+            norm_entry = entry_name.replace("\\", "/")
+            path_match = re.search(
+                r"(?:^|/)(?:linux/home|macos/Users|windows/Users)/([^/]+)/",
+                norm_entry,
+            )
+            if path_match:
+                cand = path_match.group(1).strip()
+                if validate_workstation_username(cand) is None:
+                    inferred_user = cand
+
         has_bom = entry_bytes.startswith(b"\xef\xbb\xbf")
         decoded = entry_bytes.decode("utf-8", errors="replace")
+        if not inferred_user:
+            perm_match = re.search(
+                r"(?:read_file|write_file)\(/(?:home|Users)/([^/)/]+)/",
+                decoded,
+            )
+            if perm_match:
+                cand = perm_match.group(1).strip()
+                if validate_workstation_username(cand) is None:
+                    inferred_user = cand
+
         fid = detect_file_type(entry_name, decoded)
         raw_texts[fid] = decoded
         bom_flags[fid] = has_bom
@@ -2625,6 +2797,9 @@ def import_archive_or_files(
                 "had_utf8_bom": has_bom,
             }
         )
+
+    if not str(state.get("dev_user", "") or "").strip() and inferred_user:
+        state["dev_user"] = inferred_user
 
     # Ensure OS, surfaces, and selected_file_ids cover every imported file so progressive UI reveals it
     if not state.get("os_list"):
@@ -2664,3 +2839,4 @@ def import_archive_or_files(
     )
     compiled["imported_files"] = imported_meta
     return compiled
+

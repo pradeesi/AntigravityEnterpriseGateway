@@ -183,7 +183,7 @@ def test_validator_and_autofix_all_edge_cases(client) -> None:
     Exceptions/Errors:
         AssertionError: If any validation code or Auto-Fix remediation fails.
     """
-    base_state = client.post("/api/preset", json={"preset_id": "balanced"}).get_json()["state"]
+    base_state = client.post("/api/preset", json={"preset_id": "balanced", "dev_user": "alice"}).get_json()["state"]
 
     # 1. Malformed JSON reports exact line & column
     bad_json_res = client.post(
@@ -996,3 +996,139 @@ def test_single_click_delete_handlers_avoid_stale_state_closures(client) -> None
     assert "refreshUniqueKeyFeedback(" in bind_body
     assert "btn-row-delete" in js_src
     assert ".btn-row-delete" in css_src
+
+
+def test_empty_default_username_and_mandatory_user_file_enforcement(client) -> None:
+    """Verify default workstation username is empty and mandatory only for user-scoped files.
+
+    Summary:
+        Validates that:
+          1. Initial HTML (`#input-dev-user`) and bootstrap state start with `dev_user == ""`
+             and zero hardcoded `"alice"` fallback.
+          2. All 7 user-scoped files (`cli_settings`, `desktop_config`, `browser_allowlist`,
+             `mcp_config`, `hooks_config`, `acp_json`, `acp_auth`) emit
+             `ERR_MISSING_WORKSTATION_USER` and reject `/api/download-file` +
+             `/api/download-zip` with HTTP 400 when `dev_user` is blank or invalid.
+          3. System-wide files (`admin_settings`, `gateway_env`, `guard_sh`, `guard_ps1`)
+             emit zero username errors and export cleanly (HTTP 200) when `dev_user` is blank.
+          4. Supplying a valid `dev_user` rewrites `__DEV_USER__` tokens, clears validation
+             errors, supports `ERR_UNREPLACED_USER_PLACEHOLDER` Auto-Fix, and enables exports.
+    Parameters:
+        client: Flask test client fixture.
+    Return Value:
+        None.
+    Exceptions/Errors:
+        AssertionError: If default username is non-empty or mandatory checks fail.
+    """
+    # 1. Verify initial HTML and bootstrap payload have empty dev_user
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="input-dev-user"' in html
+    assert 'value="alice"' not in html
+
+    preset_res = client.post("/api/preset", json={"preset_id": "balanced"}).get_json()
+    assert preset_res["state"]["dev_user"] == ""
+
+    issues_by_file = preset_res["validation"]["issues_by_file"]
+    user_scoped = {
+        "cli_settings",
+        "desktop_config",
+        "browser_allowlist",
+        "mcp_config",
+        "hooks_config",
+        "acp_json",
+        "acp_auth",
+    }
+    system_wide = {"admin_settings", "gateway_env", "guard_sh", "guard_ps1"}
+
+    for fid in user_scoped:
+        codes = {i["code"] for i in issues_by_file[fid]}
+        assert "ERR_MISSING_WORKSTATION_USER" in codes, f"Expected ERR_MISSING_WORKSTATION_USER on {fid}"
+
+    for fid in system_wide:
+        codes = {i["code"] for i in issues_by_file[fid]}
+        assert "ERR_MISSING_WORKSTATION_USER" not in codes
+        assert "ERR_INVALID_WORKSTATION_USER" not in codes
+
+    # 2. System-wide files compile cleanly and download (HTTP 200) with empty dev_user
+    sys_state = dict(preset_res["state"])
+    sys_state["selected_file_ids"] = ["admin_settings", "gateway_env", "guard_sh", "guard_ps1"]
+    sys_compiled = client.post("/api/compile", json={"state": sys_state}).get_json()
+    assert sys_compiled["validation"]["error_count"] == 0
+
+    dl_admin = client.post(
+        "/api/download-file",
+        json={"file_id": "admin_settings", "content": sys_compiled["files"]["admin_settings"], "dev_user": ""},
+    )
+    assert dl_admin.status_code == 200
+
+    dl_sys_zip = client.post("/api/download-zip", json={"state": sys_state})
+    assert dl_sys_zip.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(dl_sys_zip.data), mode="r") as zf:
+        names = set(zf.namelist())
+        assert "linux/etc/antigravity/admin_settings.json" in names
+        assert "windows/ProgramData/Antigravity/admin_settings.json" in names
+        readme_md = zf.read("README_DEPLOYMENT.md").decode("utf-8")
+        assert "N/A (System-wide files only)" in readme_md
+        win_lock = zf.read("scripts/lock_windows.ps1").decode("utf-8")
+        assert "__DEV_USER__" not in win_lock
+
+    # 3. User-scoped files block download (HTTP 400) when dev_user is missing or invalid
+    dl_cli_missing = client.post(
+        "/api/download-file",
+        json={"file_id": "cli_settings", "content": preset_res["files"]["cli_settings"], "dev_user": ""},
+    )
+    assert dl_cli_missing.status_code == 400
+    assert "Workstation Username is required" in dl_cli_missing.get_json()["error"]
+
+    dl_zip_missing = client.post("/api/download-zip", json={"state": preset_res["state"]})
+    assert dl_zip_missing.status_code == 400
+    assert "Workstation Username is required" in dl_zip_missing.get_json()["error"]
+
+    bad_user_state = dict(preset_res["state"])
+    bad_user_state["dev_user"] = "bad user/slash"
+    bad_compiled = client.post("/api/compile", json={"state": bad_user_state}).get_json()
+    assert any(
+        i["code"] == "ERR_INVALID_WORKSTATION_USER"
+        for i in bad_compiled["validation"]["issues_by_file"]["cli_settings"]
+    )
+    assert client.post("/api/download-zip", json={"state": bad_user_state}).status_code == 400
+
+    # 4. Supplying valid dev_user substitutes __DEV_USER__, clears errors, and allows export
+    valid_state = dict(preset_res["state"])
+    valid_state["dev_user"] = "jdoe"
+    valid_compiled = client.post("/api/compile", json={"state": valid_state}).get_json()
+    assert valid_compiled["validation"]["error_count"] == 0
+    assert "/home/jdoe/workspace" in valid_compiled["files"]["cli_settings"]
+    assert "__DEV_USER__" not in valid_compiled["files"]["cli_settings"]
+
+    dl_cli_ok = client.post(
+        "/api/download-file",
+        json={"file_id": "cli_settings", "content": valid_compiled["files"]["cli_settings"], "dev_user": "jdoe"},
+    )
+    assert dl_cli_ok.status_code == 200
+
+    dl_zip_ok = client.post("/api/download-zip", json={"state": valid_compiled["state"]})
+    assert dl_zip_ok.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(dl_zip_ok.data), mode="r") as zf:
+        assert "linux/home/jdoe/.gemini/antigravity-cli/settings.json" in zf.namelist()
+
+    # 5. Unreplaced __DEV_USER__ in raw text triggers ERR_UNREPLACED_USER_PLACEHOLDER and Auto-Fixes
+    stale_content = valid_compiled["files"]["cli_settings"].replace("/home/jdoe/", "/home/__DEV_USER__/")
+    val_stale = client.post(
+        "/api/validate",
+        json={"file_id": "cli_settings", "content": stale_content, "dev_user": "jdoe"},
+    ).get_json()
+    assert any(i["code"] == "ERR_UNREPLACED_USER_PLACEHOLDER" for i in val_stale["issues"])
+
+    fixed_stale = client.post(
+        "/api/autofix",
+        json={
+            "file_id": "cli_settings",
+            "issue_code": "ERR_UNREPLACED_USER_PLACEHOLDER",
+            "content": stale_content,
+            "state": valid_compiled["state"],
+        },
+    ).get_json()
+    assert "__DEV_USER__" not in fixed_stale["files"]["cli_settings"]
+    assert "/home/jdoe/" in fixed_stale["files"]["cli_settings"]
+

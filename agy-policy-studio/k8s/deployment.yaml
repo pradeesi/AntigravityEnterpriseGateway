@@ -23,7 +23,7 @@ data:
   PORT: "8090"
   LOG_LEVEL: "INFO"
   MAX_UPLOAD_MB: "16"
-  DEFAULT_DEV_USER: "alice"
+  DEFAULT_DEV_USER: ""
 ---
 apiVersion: apps/v1
 kind: Deployment

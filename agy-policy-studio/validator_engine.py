@@ -50,6 +50,58 @@ MULTI_CERT_BUNDLE_PATHS = {
 
 LINUX_ROOT_SYSTEM_DIRS = {"/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64"}
 
+UNSET_DEV_USER_TOKEN = "__DEV_USER__"
+
+USER_SCOPED_FILE_IDS: frozenset[str] = frozenset(
+    {
+        "cli_settings",
+        "desktop_config",
+        "browser_allowlist",
+        "mcp_config",
+        "hooks_config",
+        "acp_json",
+        "acp_auth",
+    }
+)
+
+USER_SCOPED_FILENAMES: dict[str, str] = {
+    "cli_settings": "settings.json",
+    "desktop_config": "config.json",
+    "browser_allowlist": "browserAllowlist.txt",
+    "mcp_config": "mcp_config.json",
+    "hooks_config": "hooks.json",
+    "acp_json": "acp.json",
+    "acp_auth": "antigravity-acp-settings.json",
+}
+
+_VALID_DEV_USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$")
+
+
+def validate_workstation_username(dev_user: str) -> str | None:
+    """Validate a target workstation developer username string.
+
+    Summary:
+        Ensures user-scoped policy files receive an explicit, path-safe OS
+        account username rather than a blank string, placeholder token, or
+        traversal/shell metacharacter sequence.
+    Parameters:
+        dev_user (str): Candidate workstation username supplied by the caller.
+    Return Value:
+        str | None: `None` when `dev_user` is a valid workstation username;
+        otherwise a descriptive validation error message.
+    Exceptions/Errors:
+        None.
+    """
+    cleaned = (dev_user or "").strip()
+    if not cleaned or cleaned in {UNSET_DEV_USER_TOKEN, "{user}", "<username>", "<user>"}:
+        return "Workstation Username is required."
+    if ".." in cleaned or not _VALID_DEV_USER_RE.match(cleaned):
+        return (
+            "Workstation Username must be 1-64 characters starting with a letter or digit "
+            "and containing only letters, digits, '.', '_', '-', or '@' (no spaces or slashes)."
+        )
+    return None
+
 
 def _is_live_secret_value(val: Any) -> bool:
     """Determine whether a configuration string looks like a live secret/token.
@@ -260,7 +312,7 @@ def _validate_permission_grants(
         grants (dict[str, Any]): Dictionary containing `allow`, `ask`, `deny`.
         os_list (list[str]): Active OS identifiers (`linux`, `macos`, `windows`).
         allow_non_workspace (bool): Whether non-workspace file access is enabled.
-        dev_user (str): Workstation developer username (e.g., `"alice"`).
+        dev_user (str): Workstation developer username (empty if unset).
     Return Value:
         list[dict[str, Any]]: Validation issues detected in the grant lists.
     Exceptions/Errors:
@@ -383,7 +435,7 @@ def _validate_permission_grants(
     # 3. Lazy-loaded MCP schema read access when non-workspace access is disabled
     has_mcp_allow = any(r.startswith("mcp(") for r in allow_list)
     if has_mcp_allow and not allow_non_workspace and posix_active:
-        user_slug = dev_user.strip() or "alice"
+        user_slug = dev_user.strip() or UNSET_DEV_USER_TOKEN
         missing_os: list[str] = []
         if "linux" in os_list:
             expected_lin = f"read_file(/home/{user_slug}/.gemini)"
@@ -480,20 +532,21 @@ def validate_single_file(
     content: str,
     os_list: list[str],
     surfaces: list[str],
-    dev_user: str = "alice",
+    dev_user: str = "",
     has_bom: bool = False,
 ) -> list[dict[str, Any]]:
     """Validate a single canonical Antigravity file against schema & OS rules.
 
     Summary:
-        Runs syntax, UTF-8 BOM, Preview-vs-GA schema drift, OS path/sandbox,
+        Runs mandatory workstation username checks (for user-scoped files),
+        syntax, UTF-8 BOM, Preview-vs-GA schema drift, OS path/sandbox,
         surface compatibility, MCP/Hook governance, and secret-hygiene checks.
     Parameters:
         file_id (str): Canonical studio file identifier.
         content (str): Raw text of the configuration file.
         os_list (list[str]): Selected target OSes (`linux`, `macos`, `windows`).
         surfaces (list[str]): Selected AGY surfaces (`cli`, `desktop`, `web`, `ide`).
-        dev_user (str): Target developer username for path expansions.
+        dev_user (str): Target developer username for user-scoped files and path expansions.
         has_bom (bool): Explicit BOM indicator when raw uploaded bytes started
             with `0xEF 0xBB 0xBF`.
     Return Value:
@@ -504,6 +557,64 @@ def validate_single_file(
     """
     issues: list[dict[str, Any]] = []
     text = content or ""
+    clean_user = (dev_user or "").strip()
+    placeholder_tokens = {UNSET_DEV_USER_TOKEN, "{user}", "<username>", "<user>"}
+
+    # Check 0A: Mandatory Workstation Username on user-scoped files + format validation
+    if file_id in USER_SCOPED_FILE_IDS:
+        fname = USER_SCOPED_FILENAMES.get(file_id, file_id)
+        if not clean_user or clean_user in placeholder_tokens:
+            issues.append(
+                _make_issue(
+                    code="ERR_MISSING_WORKSTATION_USER",
+                    severity="ERROR",
+                    file_id=file_id,
+                    title=f"Workstation Username is required for {fname}",
+                    message=(
+                        f"{fname} is deployed inside the developer's home directory "
+                        "(/home/<user>/..., /Users/<user>/..., or C:\\Users\\<user>\\...) "
+                        "and/or embeds user-home permission paths. Enter a Workstation Username in Step 1."
+                    ),
+                )
+            )
+        else:
+            user_err = validate_workstation_username(clean_user)
+            if user_err is not None:
+                issues.append(
+                    _make_issue(
+                        code="ERR_INVALID_WORKSTATION_USER",
+                        severity="ERROR",
+                        file_id=file_id,
+                        title="Invalid Workstation Username format",
+                        message=user_err,
+                    )
+                )
+            elif UNSET_DEV_USER_TOKEN in text or "{user}" in text:
+                issues.append(
+                    _make_issue(
+                        code="ERR_UNREPLACED_USER_PLACEHOLDER",
+                        severity="ERROR",
+                        file_id=file_id,
+                        title="Unreplaced username placeholder in file content",
+                        message=(
+                            f"Found '{UNSET_DEV_USER_TOKEN}' or '{{user}}' placeholder in {fname}. "
+                            f"Replace it with workstation username '{clean_user}'."
+                        ),
+                        fix_label=f"Replace placeholder with '{clean_user}'",
+                    )
+                )
+    elif clean_user and clean_user not in placeholder_tokens:
+        user_err = validate_workstation_username(clean_user)
+        if user_err is not None:
+            issues.append(
+                _make_issue(
+                    code="ERR_INVALID_WORKSTATION_USER",
+                    severity="ERROR",
+                    file_id=file_id,
+                    title="Invalid Workstation Username format",
+                    message=user_err,
+                )
+            )
 
     # Check 0: UTF-8 BOM detection (fatal on Windows Go `encoding/json.Unmarshal`)
     if has_bom or text.startswith("\ufeff"):
@@ -1188,7 +1299,7 @@ def validate_bundle(
     files_map: dict[str, str],
     os_list: list[str],
     surfaces: list[str],
-    dev_user: str = "alice",
+    dev_user: str = "",
     bom_map: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     """Validate all active configuration files and cross-file governance rules.
@@ -1301,7 +1412,7 @@ def _autofix_permission_grants(
     allow_list = [str(x) for x in grants.get("allow", []) if isinstance(x, str)]
     ask_list = [str(x) for x in grants.get("ask", []) if isinstance(x, str)]
     deny_list = [str(x) for x in grants.get("deny", []) if isinstance(x, str)]
-    user_slug = dev_user.strip() or "alice"
+    user_slug = dev_user.strip() or UNSET_DEV_USER_TOKEN
 
     if issue_code == "ERR_DENY_UNSANDBOXED_WILDCARD":
         deny_list = [r for r in deny_list if r != "unsandboxed(*)"]
@@ -1420,14 +1531,15 @@ def apply_autofix(
     issue_code: str,
     os_list: list[str],
     surfaces: list[str],
-    dev_user: str = "alice",
+    dev_user: str = "",
 ) -> str:
     """Apply a single deterministic Auto-Fix or `'ALL'` fixes to a config file.
 
     Summary:
-        Repairs schema drift, BOM bytes, sandbox/exebox/PowerShell permission
-        footguns, MCP eager/example warnings, hook matchers, or plaintext
-        secrets while preserving user formatting and custom keys.
+        Repairs schema drift, BOM bytes, unreplaced username placeholders,
+        sandbox/exebox/PowerShell permission footguns, MCP eager/example
+        warnings, hook matchers, or plaintext secrets while preserving user
+        formatting and custom keys.
     Parameters:
         file_id (str): Canonical studio file identifier.
         content (str): Current raw file text.
@@ -1474,6 +1586,12 @@ def apply_autofix(
         return text.lstrip("\ufeff")
 
     text = text.lstrip("\ufeff")
+
+    if issue_code == "ERR_UNREPLACED_USER_PLACEHOLDER":
+        clean_user = (dev_user or "").strip()
+        if validate_workstation_username(clean_user) is None:
+            return text.replace(UNSET_DEV_USER_TOKEN, clean_user).replace("{user}", clean_user)
+        return text
 
     # Non-JSON file fixes
     if file_id == "gateway_env":

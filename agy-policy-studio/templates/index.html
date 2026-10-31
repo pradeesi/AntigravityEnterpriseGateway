@@ -180,12 +180,16 @@ Dependencies / Side Effects:
             <!-- Workstation User & Cross-Surface Grant Sync -->
             <div class="row g-2 pt-1">
               <div class="col-sm-5">
-                <label class="form-label-sm" for="input-dev-user">Workstation Username</label>
-                <input id="input-dev-user" type="text" class="form-control form-control-sm mono-input" value="alice" spellcheck="false" placeholder="alice">
+                <div class="d-flex align-items-center justify-content-between">
+                  <label class="form-label-sm mb-0" for="input-dev-user">Workstation Username</label>
+                  <span id="dev-user-req-badge" class="badge text-bg-danger d-none" style="font-size: 0.62rem;">Required</span>
+                </div>
+                <input id="input-dev-user" type="text" class="form-control form-control-sm mono-input mt-1" value="" spellcheck="false" autocomplete="off" placeholder="Enter username...">
+                <div id="dev-user-feedback" class="text-danger mt-1 d-none" style="font-size: 0.7rem; line-height: 1.25;"></div>
               </div>
               <div class="col-sm-7">
-                <label class="form-label-sm" for="select-perm-sync">CLI &amp; Desktop Grant Sync</label>
-                <select id="select-perm-sync" class="form-select form-select-sm">
+                <label class="form-label-sm mb-0" for="select-perm-sync">CLI &amp; Desktop Grant Sync</label>
+                <select id="select-perm-sync" class="form-select form-select-sm mt-1">
                   <option value="linked" selected>Linked (Mirror CLI &harr; Desktop Grants)</option>
                   <option value="separate">Separate (Edit CLI &amp; Desktop Independently)</option>
                 </select>

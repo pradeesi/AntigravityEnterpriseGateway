@@ -48,8 +48,16 @@ from studio_engine import (
     load_preset_state,
     parse_file_into_state,
     parse_file_into_state_with_status,
+    require_valid_user_for_files,
 )
-from validator_engine import apply_autofix, detect_file_type, validate_bundle, validate_single_file
+from validator_engine import (
+    UNSET_DEV_USER_TOKEN,
+    USER_SCOPED_FILE_IDS,
+    apply_autofix,
+    detect_file_type,
+    validate_bundle,
+    validate_single_file,
+)
 
 load_dotenv(override=False)
 
@@ -264,7 +272,7 @@ def create_app() -> Flask:
         Exceptions/Errors:
             None.
         """
-        default_user = os.getenv("DEFAULT_DEV_USER", "alice").strip() or "alice"
+        default_user = os.getenv("DEFAULT_DEV_USER", "").strip()
         initial_state = build_default_state(dev_user=default_user)
         bootstrap = {
             "catalog": FILE_CATALOG,
@@ -296,7 +304,8 @@ def create_app() -> Flask:
 
         Summary:
             Initializes studio state from `preset_id`, preserves the caller's
-            `dev_user` if supplied, and returns compiled files + validation.
+            `dev_user` if supplied (or leaves blank when unset), and returns
+            compiled files + validation.
         Parameters:
             None (reads JSON body `{"preset_id": str, "dev_user": str}`).
         Return Value:
@@ -307,7 +316,8 @@ def create_app() -> Flask:
         try:
             body = _require_json_dict()
             preset_id = str(body.get("preset_id", "balanced")).strip()
-            dev_user = str(body.get("dev_user", os.getenv("DEFAULT_DEV_USER", "alice"))).strip() or "alice"
+            raw_user = body.get("dev_user", os.getenv("DEFAULT_DEV_USER", ""))
+            dev_user = str(raw_user or "").strip()
             state = load_preset_state(preset_id=preset_id, dev_user=dev_user)
             scope_specific_recipes = {
                 "recipe_bastion_strict",
@@ -321,7 +331,7 @@ def create_app() -> Flask:
                     state["surfaces"] = [s for s in body["surfaces"] if s in ALL_SURFACES]
                 if "selected_file_ids" in body:
                     state["selected_file_ids"] = body.get("selected_file_ids")
-            logger.info("Loaded preset '%s' for dev_user='%s'", preset_id, dev_user)
+            logger.info("Loaded preset '%s' for dev_user='%s'", preset_id, dev_user or "<unset>")
             return jsonify(compile_studio_state(state)), 200
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -412,7 +422,7 @@ def create_app() -> Flask:
             body = _require_json_dict()
             os_list = [o for o in body.get("os_list", ALL_OS) if o in ALL_OS] or list(ALL_OS)
             surfaces = [s for s in body.get("surfaces", ALL_SURFACES) if s in ALL_SURFACES] or list(ALL_SURFACES)
-            dev_user = str(body.get("dev_user", "alice")).strip() or "alice"
+            dev_user = str(body.get("dev_user", "") or "").strip()
 
             if isinstance(body.get("files"), dict):
                 files_in = {str(k): str(v) for k, v in body["files"].items() if k in FILE_CATALOG_BY_ID}
@@ -468,7 +478,7 @@ def create_app() -> Flask:
 
             os_list = [o for o in state.get("os_list", ALL_OS) if o in ALL_OS] or list(ALL_OS)
             surfaces = [s for s in state.get("surfaces", ALL_SURFACES) if s in ALL_SURFACES] or list(ALL_SURFACES)
-            dev_user = str(state.get("dev_user", "alice")).strip() or "alice"
+            dev_user = str(state.get("dev_user", "") or "").strip()
 
             target_fid = str(body.get("file_id", "")).strip()
             files_override = body.get("files") if isinstance(body.get("files"), dict) else {}
@@ -552,7 +562,7 @@ def create_app() -> Flask:
                 current_state = build_default_state()
 
             if body.get("load_repo_baseline") is True:
-                dev_user = str(current_state.get("dev_user", "alice")).strip() or "alice"
+                dev_user = str(current_state.get("dev_user", "") or "").strip()
                 baseline_state = load_preset_state("repo_baseline", dev_user=dev_user)
                 baseline_state["os_list"] = current_state.get("os_list") or list(ALL_OS)
                 baseline_state["surfaces"] = current_state.get("surfaces") or list(ALL_SURFACES)
@@ -584,14 +594,17 @@ def create_app() -> Flask:
         """Stream a single BOM-free UTF-8 configuration file attachment.
 
         Summary:
-            Strips any accidental UTF-8 BOM bytes and normalizes line endings
-            (`CRLF` for `.ps1`, `LF` for JSON/env/sh/txt) before streaming.
+            Enforces mandatory workstation username validation when downloading
+            any user-scoped file (`USER_SCOPED_FILE_IDS`), strips any accidental
+            UTF-8 BOM bytes, and normalizes line endings (`CRLF` for `.ps1`,
+            `LF` for JSON/env/sh/txt) before streaming.
         Parameters:
-            None (reads JSON body `{"file_id": str, "content": str}`).
+            None (reads JSON body `{"file_id": str, "content": str, "dev_user": str}`).
         Return Value:
             Response | tuple[Response, int]: File download attachment or HTTP 400.
         Exceptions/Errors:
-            Returns HTTP 400 on unknown `file_id`.
+            Returns HTTP 400 on unknown `file_id` or missing/invalid username
+            for user-scoped files.
         """
         try:
             body = _require_json_dict()
@@ -599,8 +612,18 @@ def create_app() -> Flask:
             if file_id not in FILE_CATALOG_BY_ID:
                 return jsonify({"error": f"Unknown file_id: {file_id}"}), 400
 
+            dev_user = str(body.get("dev_user", "") or "").strip()
+            require_valid_user_for_files([file_id], dev_user)
+
             meta = FILE_CATALOG_BY_ID[file_id]
             raw_content = str(body.get("content", "")).lstrip("\ufeff")
+            if file_id in USER_SCOPED_FILE_IDS and (
+                UNSET_DEV_USER_TOKEN in raw_content or "{user}" in raw_content
+            ):
+                raise ValueError(
+                    f"File '{meta['filename']}' still contains an unreplaced '{UNSET_DEV_USER_TOKEN}' username placeholder."
+                )
+
             lf_content = raw_content.replace("\r\n", "\n")
             final_text = lf_content.replace("\n", "\r\n") if file_id == "guard_ps1" else lf_content
             filename = meta["filename"]
