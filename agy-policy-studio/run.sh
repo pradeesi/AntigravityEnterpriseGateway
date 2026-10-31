@@ -36,8 +36,17 @@ fi
 
 # shellcheck disable=SC1091
 source .venv/bin/activate
-pip install --quiet --upgrade pip
-pip install --quiet -r requirements.txt
+
+# Install offline-first from local `vendor/wheels/` so air-gapped workstations never require PyPI access.
+if ! python3 -c "import flask, werkzeug, dotenv, gunicorn" >/dev/null 2>&1; then
+  if [[ -d "${SCRIPT_DIR}/vendor/wheels" ]]; then
+    echo "[INFO] Installing Python dependencies from local wheelhouse (${SCRIPT_DIR}/vendor/wheels)..."
+    pip install --quiet --no-index --find-links="${SCRIPT_DIR}/vendor/wheels" -r requirements.txt \
+      || pip install --quiet -r requirements.txt
+  else
+    pip install --quiet -r requirements.txt
+  fi
+fi
 
 echo "[INFO] Launching Antigravity Admin Policy Studio at http://localhost:${PORT}"
 exec python3 app.py

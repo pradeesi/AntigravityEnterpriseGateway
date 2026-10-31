@@ -31,7 +31,8 @@ RUN groupadd --gid 10001 appgroup && \
     useradd --uid 10001 --gid appgroup --shell /usr/sbin/nologin --create-home appuser
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip && \
+COPY vendor ./vendor
+RUN pip install --no-cache-dir --no-index --find-links=./vendor/wheels -r requirements.txt || \
     pip install --no-cache-dir -r requirements.txt
 
 COPY app.py studio_engine.py validator_engine.py ./

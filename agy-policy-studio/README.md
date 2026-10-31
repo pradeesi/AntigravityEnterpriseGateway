@@ -97,31 +97,39 @@ agy-policy-studio/
 ├── run.sh                          # 1-command local virtualenv bootstrapper & launcher (port 8090)
 ├── .env.example                    # Externalized configuration template (zero secrets)
 ├── .gitignore                      # Excludes .env, .venv, __pycache__, certificates, logs & .zip exports
-├── Dockerfile                      # Hardened python:3.12-slim non-root (uid 10001) Gunicorn container
+├── Dockerfile                      # Hardened air-gapped python:3.12-slim non-root Gunicorn container
 ├── k8s/
 │   └── deployment.yaml             # Production GKE ConfigMap, non-root Deployment & ClusterIP Service
+├── vendor/
+│   └── wheels/                     # Offline Python wheelhouse (Flask, Werkzeug, Gunicorn, dotenv, pytest)
 ├── templates/
-│   └── index.html                  # Semantic HTML5 Split-Pane UI (Light theme default + Dark toggle)
+│   └── index.html                  # Air-gapped HTML5 Split-Pane UI (zero external CDN or font requests)
 ├── static/
 │   ├── css/
+│   │   ├── fonts.css               # Local @font-face rules for self-hosted Inter & JetBrains Mono
 │   │   └── studio.css              # HSL design tokens (Light & Dark), split-pane grid & chip styles
-│   └── js/
-│       └── studio.js               # Two-way Form <-> Code controller, drag/drop importer & downloads
+│   ├── js/
+│   │   └── studio.js               # Two-way Form <-> Code controller, drag/drop importer & downloads
+│   └── vendor/
+│       ├── bootstrap/              # Self-hosted Bootstrap 5.3.3 CSS & JS bundle (with Popper)
+│       └── fonts/                  # Self-hosted Inter (400–700) & JetBrains Mono (400–600) WOFF2 fonts
 └── tests/
-    └── test_studio.py              # Comprehensive pytest suite covering all APIs, validator & Auto-Fixes
+    └── test_studio.py              # Comprehensive pytest suite covering APIs, air-gapped CSP & Auto-Fixes
 ```
 
 ---
 
-## Frameworks & Libraries
+## Frameworks & Libraries (100% Vendored Locally — Air-Gapped Ready)
+
+All frontend stylesheets, JavaScript bundles, webfonts (`static/vendor/`), and backend Python wheel archives (`vendor/wheels/`) are bundled directly inside `agy-policy-studio/` so both the browser UI and `./run.sh` / `Dockerfile` operate with **zero public internet access**:
 
 | Component | Package / Library | Version | Responsibility |
 | :--- | :--- | :--- | :--- |
-| **Backend Web Framework** | `Flask` & `Werkzeug` | `3.1.0` / `3.1.3` | Stateless routing, multipart upload handling, security headers, and JSON serialization. |
-| **Production WSGI Server** | `gunicorn` | `23.0.0` | Multi-worker threaded HTTP server for Docker, Cloud Run, and GKE. |
-| **Environment Loader** | `python-dotenv` | `1.0.1` | Loads optional local `.env` overrides without mutating OS/container env vars. |
-| **Frontend UI Framework** | `Bootstrap` + Custom HSL CSS | `5.3.3` | Responsive split-pane layout, accessible Light/Dark theming, modals, and toasts. |
-| **Test Harness** | `pytest` | `8.3.5` | Automated verification of REST endpoints, two-way sync, BOM stripping, and Auto-Fix rules. |
+| **Backend Web Framework** | `Flask` & `Werkzeug` *(vendored in `vendor/wheels/`)* | `3.1.0` / `3.1.3` | Stateless routing, multipart upload handling, strict `self` CSP headers, and JSON serialization. |
+| **Production WSGI Server** | `gunicorn` *(vendored in `vendor/wheels/`)* | `23.0.0` | Multi-worker threaded HTTP server for Docker, Cloud Run, and GKE. |
+| **Environment Loader** | `python-dotenv` *(vendored in `vendor/wheels/`)* | `1.0.1` | Loads optional local `.env` overrides without mutating OS/container env vars. |
+| **Frontend UI & Fonts** | `Bootstrap` + `Inter` & `JetBrains Mono` *(in `static/vendor/`)* | `5.3.3` | Self-hosted responsive split-pane layout, Light/Dark theming, modals, toasts, and typography. |
+| **Test Harness** | `pytest` *(vendored in `vendor/wheels/`)* | `8.3.5` | Automated verification of REST endpoints, air-gapped static assets, BOM stripping, and Auto-Fix rules. |
 
 ---
 

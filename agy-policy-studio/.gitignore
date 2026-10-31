@@ -6,7 +6,7 @@
 #   virtual environments, Python bytecode, and IDE/OS metadata.
 #
 # Architecture / Context:
-#   Scoped to `New/agy-policy-studio/` for standalone Git, Docker, or Cloud
+#   Scoped to `agy-policy-studio/` for standalone Git, Docker, or Cloud
 #   Build packaging.
 #
 # Dependencies / Side Effects:

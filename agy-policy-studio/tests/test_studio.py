@@ -610,3 +610,68 @@ def test_requirements_and_file_reference_guide_modal(client) -> None:
     assert "chattr +i" in comp["all_files_cli"]["admin_settings"]["linux"]["lock"]
 
 
+def test_airgapped_local_assets_and_csp(client) -> None:
+    """Verify Policy Studio has zero external CDN dependencies and serves all assets locally.
+
+    Summary:
+        Confirms `GET /` emits a strict self-only `Content-Security-Policy`,
+        contains zero external `<link>` or `<script src="http...">` CDN/font
+        references, serves Bootstrap 5.3.3 CSS/JS and WOFF2 fonts locally with
+        HTTP 200, and bundles an offline Python wheelhouse in `vendor/wheels/`.
+    Parameters:
+        client: Flask test client fixture.
+    Return Value:
+        None.
+    Exceptions/Errors:
+        AssertionError: Raised if any asset relies on public internet access.
+    """
+    import re
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    csp = resp.headers.get("Content-Security-Policy", "")
+    assert "default-src 'self'" in csp
+    assert "script-src 'self'" in csp
+    assert "font-src 'self'" in csp
+
+    html = resp.get_data(as_text=True)
+    assert "cdn.jsdelivr.net" not in html
+    assert "fonts.googleapis.com" not in html
+    assert "fonts.gstatic.com" not in html
+    assert not re.search(r'<(?:link|script)\b[^>]*(?:href|src)=["\']https?://', html, flags=re.IGNORECASE)
+
+    # Verify all static stylesheets and JS bundles load locally
+    for asset_path in (
+        "/static/css/fonts.css",
+        "/static/css/studio.css",
+        "/static/vendor/bootstrap/bootstrap.min.css",
+        "/static/vendor/bootstrap/bootstrap.bundle.min.js",
+        "/static/js/studio.js",
+    ):
+        asset_resp = client.get(asset_path)
+        assert asset_resp.status_code == 200, f"Missing local static asset {asset_path}"
+        assert len(asset_resp.data) > 500, f"Unexpectedly small static asset {asset_path}"
+
+    # Verify every local @font-face WOFF2 file referenced in fonts.css exists and loads
+    fonts_css = client.get("/static/css/fonts.css").get_data(as_text=True)
+    assert "https://" not in fonts_css and "http://" not in fonts_css
+    woff_urls = re.findall(r"url\(([^)]+\.woff2)\)", fonts_css)
+    assert len(woff_urls) >= 2
+    for rel_woff in woff_urls:
+        clean_rel = rel_woff.strip("'\"")
+        # Resolve `../vendor/fonts/...` relative to `/static/css/`
+        norm_url = "/static/" + clean_rel.removeprefix("../")
+        woff_resp = client.get(norm_url)
+        assert woff_resp.status_code == 200, f"Missing local font file {norm_url}"
+        assert len(woff_resp.data) > 5000, f"Corrupt or empty WOFF2 font {norm_url}"
+
+    # Verify offline Python wheelhouse exists with core packages
+    studio_root = Path(__file__).resolve().parent.parent
+    wheels_dir = studio_root / "vendor" / "wheels"
+    assert wheels_dir.is_dir(), "Offline Python wheelhouse directory vendor/wheels/ is missing"
+    wheel_names = " ".join(p.name.lower() for p in wheels_dir.iterdir())
+    for required_pkg in ("flask-", "werkzeug-", "gunicorn-", "python_dotenv-", "pytest-", "markupsafe-"):
+        assert required_pkg in wheel_names, f"Missing {required_pkg} in offline vendor/wheels/"
+
+
+
