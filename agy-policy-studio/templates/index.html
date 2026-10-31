@@ -83,7 +83,9 @@ Dependencies / Side Effects:
             <div class="row g-2 mb-2">
               <!-- Target OS Multi-Select Dropdown -->
               <div class="col-sm-6">
-                <label class="form-label-sm" for="dropdownOsBtn">Target Operating System</label>
+                <div class="studio-field-label-row">
+                  <label class="form-label-sm" for="dropdownOsBtn">Target Operating System</label>
+                </div>
                 <div class="dropdown">
                   <button id="dropdownOsBtn" class="studio-multiselect-btn dropdown-toggle is-placeholder" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
                     <span id="dropdownOsLabel" class="ms-label">Select Target OS...</span>
@@ -127,7 +129,9 @@ Dependencies / Side Effects:
 
               <!-- Antigravity Surface Multi-Select Dropdown -->
               <div class="col-sm-6">
-                <label class="form-label-sm" for="dropdownSurfaceBtn">Antigravity Surface</label>
+                <div class="studio-field-label-row">
+                  <label class="form-label-sm" for="dropdownSurfaceBtn">Antigravity Surface</label>
+                </div>
                 <div class="dropdown">
                   <button id="dropdownSurfaceBtn" class="studio-multiselect-btn dropdown-toggle is-placeholder" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
                     <span id="dropdownSurfaceLabel" class="ms-label">Select Surface(s)...</span>
@@ -177,21 +181,23 @@ Dependencies / Side Effects:
               </div>
             </div>
 
-            <!-- Workstation User & Cross-Surface Grant Sync -->
-            <div class="row g-2 pt-1">
-              <div class="col-sm-5">
-                <div class="d-flex align-items-center justify-content-between">
-                  <label class="form-label-sm mb-0" for="input-dev-user">Workstation Username</label>
-                  <span id="dev-user-req-badge" class="badge text-bg-danger d-none" style="font-size: 0.62rem;">Required</span>
+            <!-- Workstation User & Cross-Surface Grant Sync (Symmetric 2-Column Grid) -->
+            <div class="row g-2">
+              <div class="col-sm-6">
+                <div class="studio-field-label-row">
+                  <label class="form-label-sm" for="input-dev-user">Workstation Username</label>
+                  <span id="dev-user-req-badge" class="badge text-bg-danger d-none" style="font-size: 0.62rem; line-height: 1.1; padding: 0.16rem 0.38rem;">Required</span>
                 </div>
-                <input id="input-dev-user" type="text" class="form-control form-control-sm mono-input mt-1" value="" spellcheck="false" autocomplete="off" placeholder="Enter username...">
+                <input id="input-dev-user" type="text" class="form-control form-control-sm mono-input" value="" spellcheck="false" autocomplete="off" placeholder="Enter username...">
                 <div id="dev-user-feedback" class="text-danger mt-1 d-none" style="font-size: 0.7rem; line-height: 1.25;"></div>
               </div>
-              <div class="col-sm-7">
-                <label class="form-label-sm mb-0" for="select-perm-sync">CLI &amp; Desktop Grant Sync</label>
-                <select id="select-perm-sync" class="form-select form-select-sm mt-1">
-                  <option value="linked" selected>Linked (Mirror CLI &harr; Desktop Grants)</option>
-                  <option value="separate">Separate (Edit CLI &amp; Desktop Independently)</option>
+              <div class="col-sm-6">
+                <div class="studio-field-label-row">
+                  <label class="form-label-sm" for="select-perm-sync">CLI &amp; Desktop Grant Sync</label>
+                </div>
+                <select id="select-perm-sync" class="form-select form-select-sm">
+                  <option value="linked" selected>Linked (Mirror CLI &harr; Desktop)</option>
+                  <option value="separate">Separate (Independent Grants)</option>
                 </select>
               </div>
             </div>
@@ -207,14 +213,18 @@ Dependencies / Side Effects:
             </div>
 
             <div class="mb-2">
-              <label class="form-label-sm" for="preset-selector">Policy Type / Starter Preset</label>
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="preset-selector">Policy Type / Starter Preset</label>
+              </div>
               <select id="preset-selector" class="form-select form-select-sm">
               </select>
               <div id="preset-description-hint" class="text-body-secondary mt-1" style="font-size: 0.73rem;"></div>
             </div>
 
             <div class="mt-2">
-              <label class="form-label-sm" for="dropdownFilesBtn">Target Configuration Files (Included in Export)</label>
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="dropdownFilesBtn">Target Configuration Files (Included in Export)</label>
+              </div>
               <div class="dropdown">
                 <button id="dropdownFilesBtn" class="studio-multiselect-btn dropdown-toggle is-placeholder" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
                   <span id="dropdownFilesLabel" class="ms-label">Select Config File(s) to Configure...</span>
@@ -237,7 +247,9 @@ Dependencies / Side Effects:
 
             <!-- Shown when 2+ files are checked so admin switches active file cleanly without overflowing tabs -->
             <div id="active-file-selector-wrap" class="mt-2 pt-2 border-top d-none">
-              <label class="form-label-sm" for="active-file-selector">Currently Inspecting &amp; Editing File</label>
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="active-file-selector">Currently Inspecting &amp; Editing File</label>
+              </div>
               <select id="active-file-selector" class="form-select form-select-sm mono-input fw-medium">
               </select>
             </div>
@@ -297,12 +309,12 @@ Dependencies / Side Effects:
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                   <div class="d-flex align-items-center gap-2">
                     <label for="select-file-lock-os" class="form-label-sm mb-0">OS</label>
-                    <select id="select-file-lock-os" class="form-select form-select-sm" style="width: auto; min-width: 165px;">
+                    <select id="select-file-lock-os" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 165px;">
                     </select>
                   </div>
                   <div class="d-flex align-items-center gap-1">
-                    <button id="btn-copy-file-lock" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.73rem; height: 26px;">Copy Lock</button>
-                    <button id="btn-copy-file-unlock" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.73rem; height: 26px;">Copy Unlock</button>
+                    <button id="btn-copy-file-lock" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.73rem; height: 28px;">Copy Lock</button>
+                    <button id="btn-copy-file-unlock" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.73rem; height: 28px;">Copy Unlock</button>
                   </div>
                 </div>
 

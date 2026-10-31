@@ -1529,7 +1529,9 @@
 
         <div class="row g-2 mb-2">
           <div class="col-sm-6">
-            <label class="form-label-sm" for="select-perm-bucket">Permission Bucket</label>
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="select-perm-bucket">Permission Bucket</label>
+            </div>
             <select id="select-perm-bucket" class="form-select form-select-sm fw-medium">
               <option value="allow" ${bucket === "allow" ? "selected" : ""}>Allow Grants (${(permsObj.allow || []).length})</option>
               <option value="ask" ${bucket === "ask" ? "selected" : ""}>Ask / Review Grants (${(permsObj.ask || []).length})</option>
@@ -1537,14 +1539,18 @@
             </select>
           </div>
           <div class="col-sm-6">
-            <label class="form-label-sm" for="input-perm-search">Filter Current Bucket</label>
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="input-perm-search">Filter Current Bucket</label>
+            </div>
             <input type="search" id="input-perm-search" class="form-control form-control-sm" placeholder="Filter rules..." value="${escapeHtml(AppStore.permFilterQuery)}">
           </div>
         </div>
 
         <div class="row g-2 mb-2">
-          <div class="col-sm-5">
-            <label class="form-label-sm" for="select-rule-template">Syntax Template</label>
+          <div class="col-sm-6">
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="select-rule-template">Syntax Template</label>
+            </div>
             <select id="select-rule-template" class="form-select form-select-sm">
               <option value="">Insert template...</option>
               <option value="command(git status)">command(...) — Literal</option>
@@ -1555,8 +1561,10 @@
               <option value="mcp(catalog/*)">mcp(server/tool) — MCP</option>
             </select>
           </div>
-          <div class="col-sm-7">
-            <label class="form-label-sm" for="input-new-perm-rule">New Rule Expression</label>
+          <div class="col-sm-6">
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="input-new-perm-rule">New Rule Expression</label>
+            </div>
             <div class="input-group input-group-sm">
               <input type="text" id="input-new-perm-rule" class="form-control mono-input" placeholder="e.g. command(git status)">
               <button type="button" id="btn-add-perm-rule" class="btn btn-outline-primary fw-semibold">Add</button>
@@ -1775,23 +1783,27 @@
           </div>
 
           <div class="row g-2 mb-2">
-            <div class="col-md-7">
-              <label class="form-label-sm" for="gw-url">Gateway HTTPS Endpoint URL</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="gw-url">Gateway HTTPS Endpoint URL</label>
+              </div>
               <input id="gw-url" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.url)}" placeholder="https://gateway.corp.example.com">
             </div>
-            <div class="col-md-5">
-              <label class="form-label-sm" for="gw-wire">Wire Protocol</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="gw-wire">Wire Protocol</label>
+              </div>
               <select id="gw-wire" class="form-select form-select-sm">${wireOptions}</select>
             </div>
           </div>
 
-          <div class="row g-2 mb-2">
-            <div class="col-md-7">
-              <div class="d-flex justify-content-between align-items-center">
+          <div class="row g-2">
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
                 <label class="form-label-sm" for="gw-apikey">Gateway Bearer API Key</label>
-                <div class="form-check mb-0">
-                  <input class="form-check-input" type="checkbox" id="gw-omit-key" ${gw.omitApiKeyInMdm ? "checked" : ""}>
-                  <label class="form-check-label" style="font-size:0.72rem;" for="gw-omit-key">Omit in MDM (use Tier-2 Env)</label>
+                <div class="form-check mb-0 d-flex align-items-center gap-1" style="min-height: 0;">
+                  <input class="form-check-input mt-0" type="checkbox" id="gw-omit-key" ${gw.omitApiKeyInMdm ? "checked" : ""}>
+                  <label class="form-check-label text-nowrap" style="font-size:0.7rem;" for="gw-omit-key">Omit (Tier-2 Env)</label>
                 </div>
               </div>
               <div class="input-group input-group-sm">
@@ -1799,8 +1811,10 @@
                 <button type="button" class="btn btn-outline-secondary btn-toggle-secret">${eyeCaption}</button>
               </div>
             </div>
-            <div class="col-md-5">
-              <label class="form-label-sm" for="gw-cacert">Top-Level CA Bundle Path (POSIX)</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="gw-cacert">Top-Level CA Bundle Path (POSIX)</label>
+              </div>
               <input id="gw-cacert" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.caCertPath)}" placeholder="/etc/ssl/certs/ca-certificates.crt">
             </div>
           </div>
@@ -1826,9 +1840,13 @@
             </div>
             <button type="button" id="btn-add-gw-model" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.75rem;">+ Add Model</button>
           </div>
-          <div class="mb-2" style="max-width: 280px;">
-            <label class="form-label-sm" for="gw-default-model">Default Model ID</label>
-            <input id="gw-default-model" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.defaultModelId)}">
+          <div class="row g-2 mb-2">
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="gw-default-model">Default Model ID</label>
+              </div>
+              <input id="gw-default-model" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.defaultModelId)}">
+            </div>
           </div>
           ${modelRows || '<div class="text-body-secondary small">No models listed in catalog.</div>'}
           <div id="gw-mdl-id-feedback" class="text-danger small mt-1 d-none"></div>
@@ -1857,32 +1875,44 @@
           </div>
 
           <div class="mb-2">
-            <label class="form-label-sm" for="env-url">AGY_LLM_GATEWAY_URL</label>
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="env-url">AGY_LLM_GATEWAY_URL</label>
+            </div>
             <input id="env-url" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(ge.url)}">
           </div>
           <div class="row g-2 mb-2">
-            <div class="col-md-7">
-              <label class="form-label-sm" for="env-apikey">AGY_LLM_GATEWAY_API_KEY</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="env-apikey">AGY_LLM_GATEWAY_API_KEY</label>
+              </div>
               <div class="input-group input-group-sm">
                 <input id="env-apikey" type="${secretType}" class="form-control mono-input" value="${escapeHtml(ge.apiKey)}">
                 <button type="button" class="btn btn-outline-secondary btn-toggle-secret">${eyeCaption}</button>
               </div>
             </div>
-            <div class="col-md-5">
-              <label class="form-label-sm" for="env-wire">AGY_LLM_GATEWAY_WIRE_PROTOCOL</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="env-wire">AGY_LLM_GATEWAY_WIRE_PROTOCOL</label>
+              </div>
               <select id="env-wire" class="form-select form-select-sm">${envWireOptions}</select>
             </div>
           </div>
           <div class="mb-2">
-            <label class="form-label-sm" for="env-cacert">AGY_LLM_GATEWAY_CA_CERT</label>
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="env-cacert">AGY_LLM_GATEWAY_CA_CERT</label>
+            </div>
             <input id="env-cacert" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(ge.caCert)}">
           </div>
           <div class="mb-2">
-            <label class="form-label-sm" for="env-headers">AGY_LLM_GATEWAY_HEADERS (Comma-separated Key: Value pairs)</label>
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="env-headers">AGY_LLM_GATEWAY_HEADERS (Comma-separated Key: Value pairs)</label>
+            </div>
             <input id="env-headers" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(ge.headers)}">
           </div>
           <div>
-            <label class="form-label-sm" for="env-models">AGY_LLM_GATEWAY_MODELS (Comma-separated model IDs)</label>
+            <div class="studio-field-label-row">
+              <label class="form-label-sm" for="env-models">AGY_LLM_GATEWAY_MODELS (Comma-separated model IDs)</label>
+            </div>
             <input id="env-models" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(ge.models)}">
           </div>
         </div>
@@ -1923,19 +1953,27 @@
           <div class="section-desc">Enforced by <code>agy</code> CLI, VS Code, and Visual Studio extensions.</div>
           <div class="row g-2 mb-2">
             <div class="col-sm-6">
-              <label class="form-label-sm" for="cli-agent-mode">agentMode</label>
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="cli-agent-mode">agentMode</label>
+              </div>
               <select id="cli-agent-mode" class="form-select form-select-sm">${agentModeOpts}</select>
             </div>
             <div class="col-sm-6">
-              <label class="form-label-sm" for="cli-tool-perm">toolPermission</label>
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="cli-tool-perm">toolPermission</label>
+              </div>
               <select id="cli-tool-perm" class="form-select form-select-sm">${toolPermOpts}</select>
             </div>
             <div class="col-sm-6">
-              <label class="form-label-sm" for="cli-artifact-review">artifactReviewPolicy</label>
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="cli-artifact-review">artifactReviewPolicy</label>
+              </div>
               <select id="cli-artifact-review" class="form-select form-select-sm">${artifactOpts}</select>
             </div>
             <div class="col-sm-6 ${showHistoryInput ? "" : "d-none"}" id="cli-optional-row">
-              <label class="form-label-sm" for="cli-history-size">historySize (0 = Ephemeral)</label>
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="cli-history-size">historySize (0 = Ephemeral)</label>
+              </div>
               <input id="cli-history-size" type="number" min="0" max="500" class="form-control form-control-sm" value="${escapeHtml(c.historySize)}">
             </div>
           </div>
@@ -1982,12 +2020,16 @@
             </div>
           </div>
           <div class="row g-2 mt-1 ${c.sandboxProxyEnabled ? "" : "d-none"}">
-            <div class="col-md-6">
-              <label class="form-label-sm" for="cli-sbp-addr">Proxy Address</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="cli-sbp-addr">Proxy Address</label>
+              </div>
               <input id="cli-sbp-addr" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(c.sandboxProxyAddress)}" placeholder="http://proxy.corp.example.com:3128">
             </div>
-            <div class="col-md-6">
-              <label class="form-label-sm" for="cli-sbp-cert">Single-Cert Root CA PEM</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="cli-sbp-cert">Single-Cert Root CA PEM</label>
+              </div>
               <input id="cli-sbp-cert" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(c.sandboxProxyCertFile)}" placeholder="/etc/antigravity/certs/corp-root-ca.pem">
             </div>
           </div>
@@ -2044,22 +2086,28 @@
           <div class="section-heading">Desktop App &amp; Self-Hosted Web Hub (userSettings)</div>
           <div class="section-desc">Enforced by Antigravity Desktop App (2.15.0+) and <code>agy --hub</code> (:4400).</div>
           <div class="row g-2 mb-2">
-            <div class="col-md-6">
-              <label class="form-label-sm" for="desk-auto-exec">autoExecutionPolicy</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="desk-auto-exec">autoExecutionPolicy</label>
+              </div>
               <select id="desk-auto-exec" class="form-select form-select-sm">${autoExecOpts}</select>
             </div>
-            <div class="col-md-6">
-              <label class="form-label-sm" for="desk-artifact">artifactReviewMode</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="desk-artifact">artifactReviewMode</label>
+              </div>
               <select id="desk-artifact" class="form-select form-select-sm">${deskArtOpts}</select>
             </div>
           </div>
 
           <div class="row g-2 mb-2">
-            <div class="col-md-6">
-              <label class="form-label-sm" for="desk-browser-js">browserJsExecutionPolicy</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="desk-browser-js">browserJsExecutionPolicy</label>
+              </div>
               <select id="desk-browser-js" class="form-select form-select-sm">${browserJsOpts}</select>
             </div>
-            <div class="col-md-6 d-flex align-items-end gap-3 pb-1">
+            <div class="col-sm-6 d-flex align-items-end gap-3 pb-1">
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="desk-sandbox" ${d.enableTerminalSandbox ? "checked" : ""}>
                 <label class="form-check-label small" for="desk-sandbox">enableTerminalSandbox</label>
@@ -2072,12 +2120,16 @@
           </div>
 
           <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label-sm" for="desk-nonws-policy">nonWorkspaceFileAccessPolicy</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="desk-nonws-policy">nonWorkspaceFileAccessPolicy</label>
+              </div>
               <select id="desk-nonws-policy" class="form-select form-select-sm">${nonWsOpts}</select>
             </div>
-            <div class="col-md-6">
-              <label class="form-label-sm" for="desk-internet-policy">internetAccessPolicy</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="desk-internet-policy">internetAccessPolicy</label>
+              </div>
               <select id="desk-internet-policy" class="form-select form-select-sm">${internetOpts}</select>
             </div>
           </div>
@@ -2133,32 +2185,32 @@
             ${
               srv.transport === "http"
                 ? `<div class="mb-2">
-                     <label class="form-label-sm">serverUrl</label>
+                     <div class="studio-field-label-row"><label class="form-label-sm">serverUrl</label></div>
                      <input type="text" class="form-control form-control-sm mono-input" data-mcp-url="${idx}" value="${escapeHtml(srv.serverUrl)}" placeholder="https://mcp.internal.example.com/mcp/">
                    </div>`
                 : `<div class="row g-2 mb-2">
-                     <div class="col-6">
-                       <label class="form-label-sm">command</label>
+                     <div class="col-sm-6">
+                       <div class="studio-field-label-row"><label class="form-label-sm">command</label></div>
                        <input type="text" class="form-control form-control-sm mono-input" data-mcp-cmd="${idx}" value="${escapeHtml(srv.command)}" placeholder="/usr/local/bin/mcp_server">
                      </div>
-                     <div class="col-6">
-                       <label class="form-label-sm">args (comma-separated)</label>
+                     <div class="col-sm-6">
+                       <div class="studio-field-label-row"><label class="form-label-sm">args (comma-separated)</label></div>
                        <input type="text" class="form-control form-control-sm mono-input" data-mcp-args="${idx}" value="${escapeHtml((srv.args || []).join(", "))}">
                      </div>
                    </div>`
             }
 
             <div class="row g-2">
-              <div class="col-sm-3">
-                <label class="form-label-sm">timeoutSeconds</label>
+              <div class="col-sm-4">
+                <div class="studio-field-label-row"><label class="form-label-sm">timeoutSeconds</label></div>
                 <input type="number" min="1" max="3600" class="form-control form-control-sm mono-input" data-mcp-timeout="${idx}" value="${escapeHtml(srv.timeoutSeconds ?? "")}" placeholder="Omit">
               </div>
               <div class="col-sm-4">
-                <label class="form-label-sm">enabledTools</label>
+                <div class="studio-field-label-row"><label class="form-label-sm">enabledTools</label></div>
                 <input type="text" class="form-control form-control-sm mono-input" data-mcp-allow="${idx}" value="${escapeHtml((srv.enabledTools || []).join(", "))}">
               </div>
-              <div class="col-sm-5">
-                <label class="form-label-sm">disabledTools</label>
+              <div class="col-sm-4">
+                <div class="studio-field-label-row"><label class="form-label-sm">disabledTools</label></div>
                 <input type="text" class="form-control form-control-sm mono-input" data-mcp-deny="${idx}" value="${escapeHtml((srv.disabledTools || []).join(", "))}">
               </div>
             </div>
@@ -2193,16 +2245,16 @@
             </div>
           </div>
           <div class="row g-2 ${h.enablePreToolUse ? "" : "d-none"}">
-            <div class="col-md-4">
-              <label class="form-label-sm" for="hook-pre-matcher">Tool Regex Matcher</label>
+            <div class="col-sm-4">
+              <div class="studio-field-label-row"><label class="form-label-sm" for="hook-pre-matcher">Tool Regex Matcher</label></div>
               <input id="hook-pre-matcher" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.preMatcher)}">
             </div>
-            <div class="col-md-6">
-              <label class="form-label-sm" for="hook-pre-cmd">Guard Command</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row"><label class="form-label-sm" for="hook-pre-cmd">Guard Command</label></div>
               <input id="hook-pre-cmd" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.preCommand)}">
             </div>
-            <div class="col-md-2">
-              <label class="form-label-sm" for="hook-pre-timeout">Timeout (s)</label>
+            <div class="col-sm-2">
+              <div class="studio-field-label-row"><label class="form-label-sm" for="hook-pre-timeout">Timeout (s)</label></div>
               <input id="hook-pre-timeout" type="number" min="1" max="300" class="form-control form-control-sm mono-input" value="${escapeHtml(h.preTimeout ?? 10)}">
             </div>
           </div>
@@ -2219,16 +2271,16 @@
             </div>
           </div>
           <div class="row g-2 ${h.enablePostToolUse ? "" : "d-none"}">
-            <div class="col-md-4">
-              <label class="form-label-sm" for="hook-post-matcher">Tool Regex Matcher</label>
+            <div class="col-sm-4">
+              <div class="studio-field-label-row"><label class="form-label-sm" for="hook-post-matcher">Tool Regex Matcher</label></div>
               <input id="hook-post-matcher" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.postMatcher)}">
             </div>
-            <div class="col-md-6">
-              <label class="form-label-sm" for="hook-post-cmd">Audit Command</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row"><label class="form-label-sm" for="hook-post-cmd">Audit Command</label></div>
               <input id="hook-post-cmd" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.postCommand)}">
             </div>
-            <div class="col-md-2">
-              <label class="form-label-sm" for="hook-post-timeout">Timeout (s)</label>
+            <div class="col-sm-2">
+              <div class="studio-field-label-row"><label class="form-label-sm" for="hook-post-timeout">Timeout (s)</label></div>
               <input id="hook-post-timeout" type="number" min="1" max="300" class="form-control form-control-sm mono-input" value="${escapeHtml(h.postTimeout ?? 10)}">
             </div>
           </div>
@@ -2291,22 +2343,30 @@
             Configures <code>agent_servers.Antigravity</code> executable, CLI arguments, and inherited Gateway environment variables.
           </div>
           <div class="row g-2 mb-2">
-            <div class="col-md-8">
-              <label class="form-label-sm" for="acp-cmd">Antigravity CLI Executable Path</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="acp-cmd">Antigravity CLI Executable Path</label>
+              </div>
               <input id="acp-cmd" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(acp.command)}">
             </div>
-            <div class="col-md-4">
-              <label class="form-label-sm" for="acp-args">CLI Arguments (comma-sep)</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="acp-args">CLI Arguments (comma-sep)</label>
+              </div>
               <input id="acp-args" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml((acp.args || ["acp"]).join(", "))}">
             </div>
           </div>
           <div class="row g-2">
-            <div class="col-md-7">
-              <label class="form-label-sm" for="acp-gw-url">AGY_LLM_GATEWAY_URL (Synced with Group 01)</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="acp-gw-url">AGY_LLM_GATEWAY_URL (Synced with Group 01)</label>
+              </div>
               <input id="acp-gw-url" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.url)}">
             </div>
-            <div class="col-md-5">
-              <label class="form-label-sm" for="acp-gw-wire">AGY_LLM_GATEWAY_WIRE_PROTOCOL</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="acp-gw-wire">AGY_LLM_GATEWAY_WIRE_PROTOCOL</label>
+              </div>
               <select id="acp-gw-wire" class="form-select form-select-sm">${acpWireOpts}</select>
             </div>
           </div>
@@ -2324,9 +2384,13 @@
           <div class="section-desc">
             Instructs the JetBrains &amp; Zed ACP server (<code>1.3.0+</code>) to authenticate via Enterprise Gateway mode instead of interactive OAuth.
           </div>
-          <div style="max-width: 340px;">
-            <label class="form-label-sm" for="acp-auth-type">ACP Auth Type (auth.type)</label>
-            <select id="acp-auth-type" class="form-select form-select-sm">${authTypeOpts}</select>
+          <div class="row g-2">
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="acp-auth-type">ACP Auth Type (auth.type)</label>
+              </div>
+              <select id="acp-auth-type" class="form-select form-select-sm">${authTypeOpts}</select>
+            </div>
           </div>
         </div>
       `;

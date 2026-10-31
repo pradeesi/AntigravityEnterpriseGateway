@@ -1132,3 +1132,36 @@ def test_empty_default_username_and_mandatory_user_file_enforcement(client) -> N
     assert "__DEV_USER__" not in fixed_stale["files"]["cli_settings"]
     assert "/home/jdoe/" in fixed_stale["files"]["cli_settings"]
 
+
+def test_symmetrical_dropdown_and_control_grid_alignment(client) -> None:
+    """
+    Verify Step 1, Step 2, and Step 3B form controls use symmetrical 2-column grids and unified CSS tokens.
+
+    Summary:
+        Prevents asymmetric `col-sm-5`/`col-sm-7` column splits, uneven label heights,
+        and mismatched height/border/chevron rules between `.studio-multiselect-btn`,
+        `.form-select`, and `.form-control`.
+    Parameters:
+        client: Pytest Flask test client fixture.
+    Returns:
+        None.
+    Raises:
+        AssertionError: If asymmetrical column classes or missing CSS design tokens are found.
+    """
+    html = client.get("/").get_data(as_text=True)
+    assert "col-sm-5" not in html
+    assert "col-sm-7" not in html
+    assert html.count('class="studio-field-label-row"') >= 7
+
+    css = client.get("/static/css/studio.css").get_data(as_text=True)
+    assert "--studio-control-height: 34px;" in css
+    assert "--studio-chevron-bg:" in css
+    assert ".studio-field-label-row" in css
+
+    js = client.get("/static/js/studio.js").get_data(as_text=True)
+    assert "col-sm-5" not in js
+    assert "col-sm-7" not in js
+    assert "col-md-7" not in js
+    assert "col-md-5" not in js
+
+
