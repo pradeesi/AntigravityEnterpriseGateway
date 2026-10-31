@@ -533,17 +533,40 @@ body {
 }
 
 .rule-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
   border: none;
+  border-radius: 3px;
   background: transparent;
   color: var(--studio-text-muted);
-  padding: 0 2px;
+  padding: 0;
   line-height: 1;
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .rule-chip-remove:hover {
+  background-color: var(--studio-err-soft);
   color: var(--studio-err);
+}
+
+/* Row-level [x] Delete Button Hit Target */
+.btn-row-delete {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 0.98rem;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 /* Right-Pane Empty State Guidance */

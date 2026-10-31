@@ -98,6 +98,8 @@
     pendingCodeSync: null,
     pendingFormSync: null,
     unparsedCodeFiles: {},
+    isPointerDownInForm: false,
+    deferredFormRender: false,
   };
 
   /**
@@ -139,6 +141,98 @@
           `<option value="${escapeHtml(opt.value)}" ${opt.value === cur ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
       )
       .join("");
+  }
+
+  /**
+   * Generate a guaranteed-unique key or identifier for dictionary/catalog rows.
+   *
+   * @summary Prevents `+ Add Header`, `+ Add Model`, and `+ Add Server` from
+   *   pushing duplicate keys that collapse into a single property inside
+   *   Right-Pane JSON objects (`gateway.customHeaders`, `mcpServers`).
+   * @param {Array<string>} existingValues - Existing keys or IDs currently in the list.
+   * @param {string} preferredFirst - Clean initial key used when not yet present.
+   * @param {string} numberedPrefix - Prefix for numbered keys (`X-Custom-Header-`, `corp_server_`).
+   * @returns {string} Guaranteed-unique key not present in `existingValues`.
+   * @throws {never} Never throws.
+   */
+  function nextUniqueIdentifier(existingValues, preferredFirst, numberedPrefix) {
+    const used = new Set(
+      (existingValues || [])
+        .map((v) => String(v ?? "").trim().toLowerCase())
+        .filter(Boolean)
+    );
+    if (preferredFirst && !used.has(preferredFirst.toLowerCase())) {
+      return preferredFirst;
+    }
+    let counter = 1;
+    while (used.has(`${numberedPrefix}${counter}`.toLowerCase())) {
+      counter += 1;
+    }
+    return `${numberedPrefix}${counter}`;
+  }
+
+  /**
+   * Highlight duplicate or blank keys in dictionary-backed Left-Pane form rows without re-rendering DOM.
+   *
+   * @summary Explains immediately why two rows sharing the same key collapse into
+   *   one property in JSON objects (`gateway.customHeaders` or `mcpServers`).
+   * @param {HTMLElement} container - Left-pane form container.
+   * @param {string} inputSelector - CSS selector for key/ID inputs (e.g. `[data-gw-hdr-key]`).
+   * @param {string} feedbackId - Element ID of the inline warning box.
+   * @param {string} jsonObjectLabel - Human-readable JSON path (e.g. `gateway.customHeaders`).
+   * @param {boolean} [caseInsensitive=false] - Whether collisions are case-insensitive (true for HTTP headers).
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function refreshUniqueKeyFeedback(
+    container,
+    inputSelector,
+    feedbackId,
+    jsonObjectLabel,
+    caseInsensitive = false
+  ) {
+    const inputs = Array.from(container.querySelectorAll(inputSelector));
+    const feedbackEl = container.querySelector(`#${feedbackId}`);
+    if (!feedbackEl) {
+      return;
+    }
+    const counts = new Map();
+    const displayDupes = [];
+    let hasBlank = false;
+
+    inputs.forEach((inp) => {
+      const raw = inp.value.trim();
+      if (!raw) {
+        hasBlank = true;
+        return;
+      }
+      const norm = caseInsensitive ? raw.toLowerCase() : raw;
+      counts.set(norm, (counts.get(norm) || 0) + 1);
+    });
+
+    const seenDupeNorm = new Set();
+    inputs.forEach((inp) => {
+      const raw = inp.value.trim();
+      const norm = caseInsensitive ? raw.toLowerCase() : raw;
+      const isDupe = Boolean(raw) && (counts.get(norm) || 0) > 1;
+      const isInvalid = !raw || isDupe;
+      inp.classList.toggle("is-invalid", isInvalid);
+      if (isDupe && !seenDupeNorm.has(norm)) {
+        seenDupeNorm.add(norm);
+        displayDupes.push(raw);
+      }
+    });
+
+    if (displayDupes.length > 0) {
+      feedbackEl.textContent = `Duplicate key (${displayDupes.join(", ")}) — JSON "${jsonObjectLabel}" keys must be unique, so duplicate names overwrite earlier rows on the right.`;
+      feedbackEl.classList.remove("d-none");
+    } else if (hasBlank) {
+      feedbackEl.textContent = `Blank key — enter a non-empty name so the row is emitted into "${jsonObjectLabel}" on the right.`;
+      feedbackEl.classList.remove("d-none");
+    } else {
+      feedbackEl.textContent = "";
+      feedbackEl.classList.add("d-none");
+    }
   }
 
   /**
@@ -405,7 +499,13 @@
       formContainer.classList.toggle("d-none", !hasFiles);
     }
     if (hasFiles && !options.skipForm) {
-      renderActiveFormPanel(Boolean(options.preserveFormFocus));
+      if (options.deferFormIfPointerDown && AppStore.isPointerDownInForm) {
+        // Defer innerHTML replacement while mouse/pointer is pressed inside the form
+        // so mousedown -> mouseup -> click on [x] or + Add buttons is never aborted.
+        AppStore.deferredFormRender = true;
+      } else {
+        renderActiveFormPanel(Boolean(options.preserveFormFocus));
+      }
     }
 
     const emptyRight = document.getElementById("right-empty-state");
@@ -973,6 +1073,7 @@
         skipForm: !reRenderForm,
         skipEditor: false,
         preserveFormFocus: true,
+        deferFormIfPointerDown: true,
       });
       refreshSyncPillForSelectedFile();
     } catch (err) {
@@ -1109,6 +1210,7 @@
         skipEditor: stillViewingEditedFile,
         skipForm: false,
         preserveFormFocus: true,
+        deferFormIfPointerDown: true,
       });
       refreshSyncPillForSelectedFile();
     } catch (err) {
@@ -1446,7 +1548,11 @@
       btn.addEventListener("click", () => {
         const idx = Number(btn.dataset.removeRuleIdx);
         const perms = getTargetPerms();
-        perms[AppStore.activePermBucket].splice(idx, 1);
+        const arr = perms[AppStore.activePermBucket];
+        if (!Array.isArray(arr) || !Number.isInteger(idx) || idx < 0 || idx >= arr.length) {
+          return;
+        }
+        arr.splice(idx, 1);
         syncMirrorIfLinked();
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
@@ -1464,6 +1570,7 @@
    * @throws {never} Never throws.
    */
   function renderActiveFormPanel(preserveFocus = false) {
+    AppStore.deferredFormRender = false;
     const container = document.getElementById("form-panel-container");
     if (!container) {
       return;
@@ -1489,11 +1596,11 @@
             <div class="col-5">
               <input type="text" class="form-control form-control-sm mono-input" data-gw-hdr-key="${idx}" value="${escapeHtml(h.key)}" placeholder="X-Cost-Center">
             </div>
-            <div class="col-6">
+            <div class="col">
               <input type="text" class="form-control form-control-sm mono-input" data-gw-hdr-val="${idx}" value="${escapeHtml(h.value)}" placeholder="CC-9941-SEC">
             </div>
-            <div class="col-1 text-end">
-              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" data-gw-hdr-del="${idx}" title="Remove header">&times;</button>
+            <div class="col-auto">
+              <button type="button" class="btn btn-sm btn-outline-danger btn-row-delete" data-gw-hdr-del="${idx}" aria-label="Remove header" title="Remove header">&times;</button>
             </div>
           </div>`
         )
@@ -1506,11 +1613,11 @@
             <div class="col-6">
               <input type="text" class="form-control form-control-sm mono-input" data-gw-mdl-id="${idx}" value="${escapeHtml(m.modelId)}" placeholder="gemini-3.8-flash">
             </div>
-            <div class="col-5">
+            <div class="col">
               <input type="text" class="form-control form-control-sm" data-gw-mdl-name="${idx}" value="${escapeHtml(m.displayName || "")}" placeholder="Display Name (optional)">
             </div>
-            <div class="col-1 text-end">
-              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" data-gw-mdl-del="${idx}" title="Remove model">&times;</button>
+            <div class="col-auto">
+              <button type="button" class="btn btn-sm btn-outline-danger btn-row-delete" data-gw-mdl-del="${idx}" aria-label="Remove model" title="Remove model">&times;</button>
             </div>
           </div>`
         )
@@ -1578,6 +1685,7 @@
             <button type="button" id="btn-add-gw-header" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.75rem;">+ Add Header</button>
           </div>
           ${headersRows || '<div class="text-body-secondary small">No custom headers configured.</div>'}
+          <div id="gw-hdr-key-feedback" class="text-danger small mt-1 d-none"></div>
         </div>
 
         <div class="section-block">
@@ -1593,6 +1701,7 @@
             <input id="gw-default-model" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.defaultModelId)}">
           </div>
           ${modelRows || '<div class="text-body-secondary small">No models listed in catalog.</div>'}
+          <div id="gw-mdl-id-feedback" class="text-danger small mt-1 d-none"></div>
         </div>
       `;
     } else if (fid === "gateway_env") {
@@ -1853,7 +1962,7 @@
           (dom, idx) => `
           <span class="rule-chip">
             <span>${escapeHtml(dom)}</span>
-            <button type="button" class="rule-chip-remove" data-del-domain="${idx}">&times;</button>
+            <button type="button" class="rule-chip-remove" data-del-domain="${idx}" aria-label="Remove domain" title="Remove domain">&times;</button>
           </span>`
         )
         .join("");
@@ -1887,7 +1996,7 @@
                   <input class="form-check-input" type="checkbox" data-mcp-enabled="${idx}" ${!srv.disabled ? "checked" : ""}>
                   <label class="form-check-label small">${!srv.disabled ? "Enabled" : "Disabled"}</label>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" data-mcp-del="${idx}">&times;</button>
+                <button type="button" class="btn btn-sm btn-outline-danger btn-row-delete" data-mcp-del="${idx}" aria-label="Remove MCP server" title="Remove MCP server">&times;</button>
               </div>
             </div>
 
@@ -1937,6 +2046,7 @@
             <button type="button" id="btn-add-mcp" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.75rem;">+ Add Server</button>
           </div>
           ${serversHtml || '<div class="text-body-secondary small">No MCP servers configured.</div>'}
+          <div id="mcp-name-feedback" class="text-danger small mt-1 d-none"></div>
         </div>
       `;
     } else if (fid === "hooks_config") {
@@ -2102,14 +2212,17 @@
   /**
    * Attach input/change listeners to the currently rendered left-pane form.
    *
-   * @summary Mutates `AppStore.state` cleanly and triggers `scheduleFormCompile`.
+   * @summary Resolves `AppStore.state` dynamically inside every event callback so
+   *   background `/api/compile` responses that replace `AppStore.state` (`skipForm: true`)
+   *   never leave `[x]` delete, `+ Add`, or input handlers bound to a detached state object.
    * @param {HTMLElement} container - Left-pane form container.
    * @param {string} fid - Active `file_id`.
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
   function bindActiveFormEvents(container, fid) {
-    const s = AppStore.state;
+    // Always resolve the live state object at event time rather than caching across async compiles
+    const getState = () => AppStore.state;
 
     container.querySelectorAll(".btn-toggle-secret").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -2119,141 +2232,215 @@
     });
 
     if (fid === "admin_settings") {
-      const gw = s.gateway;
+      const getGw = () => getState().gateway;
+
       container.querySelector("#gw-enabled")?.addEventListener("change", (e) => {
-        gw.enabled = e.target.checked;
+        getGw().enabled = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#gw-url")?.addEventListener("input", (e) => {
-        gw.url = e.target.value;
-        s.gateway_env.url = e.target.value;
+        getGw().url = e.target.value;
+        getState().gateway_env.url = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#gw-wire")?.addEventListener("change", (e) => {
-        gw.wireProtocol = e.target.value;
-        s.gateway_env.wireProtocol = e.target.value;
+        getGw().wireProtocol = e.target.value;
+        getState().gateway_env.wireProtocol = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#gw-omit-key")?.addEventListener("change", (e) => {
-        gw.omitApiKeyInMdm = e.target.checked;
+        getGw().omitApiKeyInMdm = e.target.checked;
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#gw-apikey")?.addEventListener("input", (e) => {
-        gw.apiKey = e.target.value;
+        getGw().apiKey = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#gw-cacert")?.addEventListener("input", (e) => {
-        gw.caCertPath = e.target.value;
+        getGw().caCertPath = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#gw-default-model")?.addEventListener("input", (e) => {
-        gw.defaultModelId = e.target.value;
+        getGw().defaultModelId = e.target.value;
         scheduleFormCompile(false);
       });
 
+      const updateHeaderKeyFeedback = () =>
+        refreshUniqueKeyFeedback(
+          container,
+          "[data-gw-hdr-key]",
+          "gw-hdr-key-feedback",
+          "gateway.customHeaders",
+          true
+        );
+      const updateModelIdFeedback = () =>
+        refreshUniqueKeyFeedback(
+          container,
+          "[data-gw-mdl-id]",
+          "gw-mdl-id-feedback",
+          "models.list[].modelId",
+          false
+        );
+
+      updateHeaderKeyFeedback();
+      updateModelIdFeedback();
+
       container.querySelector("#btn-add-gw-header")?.addEventListener("click", () => {
-        gw.customHeaders.push({ key: "X-Enterprise-Team", value: "Platform" });
+        const headers = getGw().customHeaders;
+        const uniqueKey = nextUniqueIdentifier(
+          headers.map((h) => h.key),
+          "X-Enterprise-Team",
+          "X-Custom-Header-"
+        );
+        const hdrSuffix = uniqueKey.match(/(\d+)$/);
+        const defaultVal =
+          uniqueKey === "X-Enterprise-Team"
+            ? "Platform"
+            : `Value-${hdrSuffix ? hdrSuffix[1] : "1"}`;
+        headers.push({ key: uniqueKey, value: defaultVal });
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelectorAll("[data-gw-hdr-key]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          gw.customHeaders[Number(inp.dataset.gwHdrKey)].key = inp.value;
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.gwHdrKey);
+          const headers = getGw().customHeaders;
+          if (Array.isArray(headers) && Number.isInteger(idx) && idx >= 0 && idx < headers.length) {
+            headers[idx].key = inp.value;
+            updateHeaderKeyFeedback();
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-gw-hdr-val]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          gw.customHeaders[Number(inp.dataset.gwHdrVal)].value = inp.value;
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.gwHdrVal);
+          const headers = getGw().customHeaders;
+          if (Array.isArray(headers) && Number.isInteger(idx) && idx >= 0 && idx < headers.length) {
+            headers[idx].value = inp.value;
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-gw-hdr-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          gw.customHeaders.splice(Number(btn.dataset.gwHdrDel), 1);
+          const idx = Number(btn.dataset.gwHdrDel);
+          const headers = getGw().customHeaders;
+          if (!Array.isArray(headers) || !Number.isInteger(idx) || idx < 0 || idx >= headers.length) {
+            return;
+          }
+          headers.splice(idx, 1);
           renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
 
       container.querySelector("#btn-add-gw-model")?.addEventListener("click", () => {
-        gw.models.push({ modelId: "gemini-3.8-flash", displayName: "Gemini 3.8 Flash" });
+        const models = getGw().models;
+        const uniqueModelId = nextUniqueIdentifier(
+          models.map((m) => m.modelId),
+          "gemini-3.8-flash",
+          "gemini-custom-model-"
+        );
+        const suffixMatch = uniqueModelId.match(/(\d+)$/);
+        const displayName =
+          uniqueModelId === "gemini-3.8-flash"
+            ? "Gemini 3.8 Flash"
+            : `Custom Enterprise Model ${suffixMatch ? suffixMatch[1] : ""}`.trim();
+        models.push({ modelId: uniqueModelId, displayName });
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelectorAll("[data-gw-mdl-id]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          gw.models[Number(inp.dataset.gwMdlId)].modelId = inp.value;
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.gwMdlId);
+          const models = getGw().models;
+          if (Array.isArray(models) && Number.isInteger(idx) && idx >= 0 && idx < models.length) {
+            models[idx].modelId = inp.value;
+            updateModelIdFeedback();
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-gw-mdl-name]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          gw.models[Number(inp.dataset.gwMdlName)].displayName = inp.value;
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.gwMdlName);
+          const models = getGw().models;
+          if (Array.isArray(models) && Number.isInteger(idx) && idx >= 0 && idx < models.length) {
+            models[idx].displayName = inp.value;
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-gw-mdl-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          gw.models.splice(Number(btn.dataset.gwMdlDel), 1);
+          const idx = Number(btn.dataset.gwMdlDel);
+          const models = getGw().models;
+          if (!Array.isArray(models) || !Number.isInteger(idx) || idx < 0 || idx >= models.length) {
+            return;
+          }
+          models.splice(idx, 1);
           renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
     } else if (fid === "gateway_env") {
-      const ge = s.gateway_env;
+      const getGe = () => getState().gateway_env;
+
       container.querySelector("#env-export-prefix")?.addEventListener("change", (e) => {
-        ge.exportPrefix = e.target.checked;
+        getGe().exportPrefix = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#env-url")?.addEventListener("input", (e) => {
-        ge.url = e.target.value;
+        getGe().url = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#env-apikey")?.addEventListener("input", (e) => {
-        ge.apiKey = e.target.value;
+        getGe().apiKey = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#env-wire")?.addEventListener("change", (e) => {
-        ge.wireProtocol = e.target.value;
+        getGe().wireProtocol = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#env-cacert")?.addEventListener("input", (e) => {
-        ge.caCert = e.target.value;
+        getGe().caCert = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#env-headers")?.addEventListener("input", (e) => {
-        ge.headers = e.target.value;
+        getGe().headers = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#env-models")?.addEventListener("input", (e) => {
-        ge.models = e.target.value;
+        getGe().models = e.target.value;
         scheduleFormCompile(false);
       });
     } else if (fid === "cli_settings") {
-      const c = s.cli;
+      const getCli = () => getState().cli;
+
       container.querySelector("#cli-agent-mode")?.addEventListener("change", (e) => {
-        c.agentMode = e.target.value;
+        getCli().agentMode = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-tool-perm")?.addEventListener("change", (e) => {
-        c.toolPermission = e.target.value;
+        getCli().toolPermission = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-artifact-review")?.addEventListener("change", (e) => {
-        c.artifactReviewPolicy = e.target.value;
+        getCli().artifactReviewPolicy = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-enable-sandbox")?.addEventListener("change", (e) => {
-        c.enableTerminalSandbox = e.target.checked;
+        getCli().enableTerminalSandbox = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-non-ws")?.addEventListener("change", (e) => {
-        c.allowNonWorkspaceAccess = e.target.checked;
+        getCli().allowNonWorkspaceAccess = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-opt-ui")?.addEventListener("change", (e) => {
+        const c = getCli();
         c.includeOptionalUiKeys = e.target.checked;
         if (!c.includeOptionalUiKeys && c.historySize === 50) {
           c.notifications = false;
@@ -2264,22 +2451,23 @@
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-history-size")?.addEventListener("input", (e) => {
-        c.historySize = e.target.value === "" ? 50 : Number(e.target.value);
+        getCli().historySize = e.target.value === "" ? 50 : Number(e.target.value);
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-ui-notif")?.addEventListener("change", (e) => {
-        c.notifications = e.target.checked;
+        getCli().notifications = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-ui-survey")?.addEventListener("change", (e) => {
-        c.showFeedbackSurvey = e.target.checked;
+        getCli().showFeedbackSurvey = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-ui-tips")?.addEventListener("change", (e) => {
-        c.showTips = e.target.checked;
+        getCli().showTips = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-sbp-enabled")?.addEventListener("change", (e) => {
+        const c = getCli();
         c.sandboxProxyEnabled = e.target.checked;
         if (c.sandboxProxyEnabled && !c.sandboxProxyAddress) {
           c.sandboxProxyAddress = "http://proxy.internal.example.com:3128";
@@ -2293,42 +2481,43 @@
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-sbp-addr")?.addEventListener("input", (e) => {
-        c.sandboxProxyAddress = e.target.value;
+        getCli().sandboxProxyAddress = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-sbp-cert")?.addEventListener("input", (e) => {
-        c.sandboxProxyCertFile = e.target.value;
+        getCli().sandboxProxyCertFile = e.target.value;
         scheduleFormCompile(false);
       });
       bindPermissionsWidgetEvents(container, "cli");
     } else if (fid === "desktop_config") {
-      const d = s.desktop;
+      const getDesk = () => getState().desktop;
+
       container.querySelector("#desk-auto-exec")?.addEventListener("change", (e) => {
-        d.autoExecutionPolicy = e.target.value;
+        getDesk().autoExecutionPolicy = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#desk-artifact")?.addEventListener("change", (e) => {
-        d.artifactReviewMode = e.target.value;
+        getDesk().artifactReviewMode = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#desk-browser-js")?.addEventListener("change", (e) => {
-        d.browserJsExecutionPolicy = e.target.value;
+        getDesk().browserJsExecutionPolicy = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#desk-sandbox")?.addEventListener("change", (e) => {
-        d.enableTerminalSandbox = e.target.checked;
+        getDesk().enableTerminalSandbox = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#desk-net")?.addEventListener("change", (e) => {
-        d.sandboxAllowNetwork = e.target.checked;
+        getDesk().sandboxAllowNetwork = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#desk-nonws-policy")?.addEventListener("change", (e) => {
-        d.nonWorkspaceFileAccessPolicy = e.target.value;
+        getDesk().nonWorkspaceFileAccessPolicy = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#desk-internet-policy")?.addEventListener("change", (e) => {
-        d.internetAccessPolicy = e.target.value;
+        getDesk().internetAccessPolicy = e.target.value;
         scheduleFormCompile(false);
       });
       bindPermissionsWidgetEvents(container, "desktop");
@@ -2339,8 +2528,9 @@
         if (!val) {
           return;
         }
-        if (!s.browser_domains.includes(val)) {
-          s.browser_domains.push(val);
+        const domains = getState().browser_domains;
+        if (!domains.includes(val)) {
+          domains.push(val);
         }
         inp.value = "";
         renderActiveFormPanel(false);
@@ -2356,15 +2546,36 @@
       });
       container.querySelectorAll("[data-del-domain]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          s.browser_domains.splice(Number(btn.dataset.delDomain), 1);
+          const idx = Number(btn.dataset.delDomain);
+          const domains = getState().browser_domains;
+          if (!Array.isArray(domains) || !Number.isInteger(idx) || idx < 0 || idx >= domains.length) {
+            return;
+          }
+          domains.splice(idx, 1);
           renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
     } else if (fid === "mcp_config") {
+      const updateMcpNameFeedback = () =>
+        refreshUniqueKeyFeedback(
+          container,
+          "[data-mcp-name]",
+          "mcp-name-feedback",
+          "mcpServers",
+          false
+        );
+      updateMcpNameFeedback();
+
       container.querySelector("#btn-add-mcp")?.addEventListener("click", () => {
-        s.mcp_servers.push({
-          name: `corp_server_${s.mcp_servers.length + 1}`,
+        const servers = getState().mcp_servers;
+        const uniqueServerName = nextUniqueIdentifier(
+          servers.map((s) => s.name),
+          "",
+          "corp_server_"
+        );
+        servers.push({
+          name: uniqueServerName,
           transport: "stdio",
           command: "/usr/local/bin/mcp_server",
           args: [],
@@ -2380,121 +2591,163 @@
       });
       container.querySelectorAll("[data-mcp-name]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          s.mcp_servers[Number(inp.dataset.mcpName)].name = inp.value;
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.mcpName);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].name = inp.value;
+            updateMcpNameFeedback();
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-transport]").forEach((sel) => {
         sel.addEventListener("change", () => {
-          s.mcp_servers[Number(sel.dataset.mcpTransport)].transport = sel.value;
-          renderActiveFormPanel(false);
-          scheduleFormCompile(false);
+          const idx = Number(sel.dataset.mcpTransport);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].transport = sel.value;
+            renderActiveFormPanel(false);
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-enabled]").forEach((chk) => {
         chk.addEventListener("change", () => {
-          s.mcp_servers[Number(chk.dataset.mcpEnabled)].disabled = !chk.checked;
-          renderActiveFormPanel(false);
-          scheduleFormCompile(false);
+          const idx = Number(chk.dataset.mcpEnabled);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].disabled = !chk.checked;
+            renderActiveFormPanel(false);
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          s.mcp_servers.splice(Number(btn.dataset.mcpDel), 1);
+          const idx = Number(btn.dataset.mcpDel);
+          const servers = getState().mcp_servers;
+          if (!Array.isArray(servers) || !Number.isInteger(idx) || idx < 0 || idx >= servers.length) {
+            return;
+          }
+          servers.splice(idx, 1);
           renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
       container.querySelectorAll("[data-mcp-url]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          s.mcp_servers[Number(inp.dataset.mcpUrl)].serverUrl = inp.value;
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.mcpUrl);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].serverUrl = inp.value;
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-cmd]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          s.mcp_servers[Number(inp.dataset.mcpCmd)].command = inp.value;
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.mcpCmd);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].command = inp.value;
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-args]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          s.mcp_servers[Number(inp.dataset.mcpArgs)].args = inp.value
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean);
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.mcpArgs);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].args = inp.value
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean);
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-timeout]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          const rawVal = inp.value.trim();
-          s.mcp_servers[Number(inp.dataset.mcpTimeout)].timeoutSeconds =
-            rawVal === "" ? null : Number(rawVal);
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.mcpTimeout);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            const rawVal = inp.value.trim();
+            servers[idx].timeoutSeconds = rawVal === "" ? null : Number(rawVal);
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-allow]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          s.mcp_servers[Number(inp.dataset.mcpAllow)].enabledTools = inp.value
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean);
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.mcpAllow);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].enabledTools = inp.value
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean);
+            scheduleFormCompile(false);
+          }
         });
       });
       container.querySelectorAll("[data-mcp-deny]").forEach((inp) => {
         inp.addEventListener("input", () => {
-          s.mcp_servers[Number(inp.dataset.mcpDeny)].disabledTools = inp.value
-            .split(",")
-            .map((x) => x.trim())
-            .filter(Boolean);
-          scheduleFormCompile(false);
+          const idx = Number(inp.dataset.mcpDeny);
+          const servers = getState().mcp_servers;
+          if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
+            servers[idx].disabledTools = inp.value
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean);
+            scheduleFormCompile(false);
+          }
         });
       });
     } else if (fid === "hooks_config") {
-      const h = s.hooks;
+      const getHooks = () => getState().hooks;
+
       container.querySelector("#hook-pre-en")?.addEventListener("change", (e) => {
-        h.enablePreToolUse = e.target.checked;
+        getHooks().enablePreToolUse = e.target.checked;
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-pre-matcher")?.addEventListener("input", (e) => {
-        h.preMatcher = e.target.value;
+        getHooks().preMatcher = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-pre-cmd")?.addEventListener("input", (e) => {
-        h.preCommand = e.target.value;
+        getHooks().preCommand = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-pre-timeout")?.addEventListener("input", (e) => {
-        h.preTimeout = Number(e.target.value || 10);
+        getHooks().preTimeout = Number(e.target.value || 10);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-post-en")?.addEventListener("change", (e) => {
-        h.enablePostToolUse = e.target.checked;
+        getHooks().enablePostToolUse = e.target.checked;
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-post-matcher")?.addEventListener("input", (e) => {
-        h.postMatcher = e.target.value;
+        getHooks().postMatcher = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-post-cmd")?.addEventListener("input", (e) => {
-        h.postCommand = e.target.value;
+        getHooks().postCommand = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-post-timeout")?.addEventListener("input", (e) => {
-        h.postTimeout = Number(e.target.value || 10);
+        getHooks().postTimeout = Number(e.target.value || 10);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-banner-en")?.addEventListener("change", (e) => {
-        h.enableSessionStartBanner = e.target.checked;
+        getHooks().enableSessionStartBanner = e.target.checked;
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-banner-txt")?.addEventListener("input", (e) => {
-        h.sessionBannerText = e.target.value;
+        getHooks().sessionBannerText = e.target.value;
         scheduleFormCompile(false);
       });
     } else if (fid === "guard_sh" || fid === "guard_ps1") {
@@ -2503,9 +2756,9 @@
           await flushPendingSync();
           const fresh = await postJson("/api/preset", {
             preset_id: "balanced",
-            dev_user: s.dev_user,
+            dev_user: getState().dev_user,
           });
-          s.scripts[fid] = fresh.state.scripts[fid];
+          getState().scripts[fid] = fresh.state.scripts[fid];
           renderActiveFormPanel(false);
           scheduleFormCompile(false);
           showToast("Guard script restored to canonical default", "success");
@@ -2515,7 +2768,7 @@
       });
     } else if (fid === "acp_json") {
       container.querySelector("#acp-cmd")?.addEventListener("input", (e) => {
-        s.acp.command = e.target.value;
+        getState().acp.command = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#acp-args")?.addEventListener("input", (e) => {
@@ -2523,22 +2776,22 @@
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean);
-        s.acp.args = parsedArgs.length ? parsedArgs : ["acp"];
+        getState().acp.args = parsedArgs.length ? parsedArgs : ["acp"];
         scheduleFormCompile(false);
       });
       container.querySelector("#acp-gw-url")?.addEventListener("input", (e) => {
-        s.gateway.url = e.target.value;
-        s.gateway_env.url = e.target.value;
+        getState().gateway.url = e.target.value;
+        getState().gateway_env.url = e.target.value;
         scheduleFormCompile(false);
       });
       container.querySelector("#acp-gw-wire")?.addEventListener("change", (e) => {
-        s.gateway.wireProtocol = e.target.value;
-        s.gateway_env.wireProtocol = e.target.value;
+        getState().gateway.wireProtocol = e.target.value;
+        getState().gateway_env.wireProtocol = e.target.value;
         scheduleFormCompile(false);
       });
     } else if (fid === "acp_auth") {
       container.querySelector("#acp-auth-type")?.addEventListener("change", (e) => {
-        s.acp.authType = e.target.value;
+        getState().acp.authType = e.target.value;
         scheduleFormCompile(false);
       });
     }
@@ -2749,7 +3002,14 @@
     }
     const nextUser = trimmed || "alice";
     const oldUser = AppStore.lastDevUser || AppStore.state.dev_user || "alice";
-    if (nextUser === AppStore.state.dev_user && !isBlur) {
+    if (nextUser === AppStore.state.dev_user) {
+      // Normalize whitespace or empty blur in-place without triggering a form re-render
+      if (isBlur) {
+        const userEl = document.getElementById("input-dev-user");
+        if (userEl && userEl.value !== nextUser) {
+          userEl.value = nextUser;
+        }
+      }
       return;
     }
 
@@ -2793,6 +3053,31 @@
       const current = document.documentElement.getAttribute("data-bs-theme");
       applyTheme(current === "dark" ? "light" : "dark");
     });
+
+    // Guard #form-panel-container against mid-click DOM replacement between mousedown and mouseup
+    const formPanelEl = document.getElementById("form-panel-container");
+    const markFormPointerDown = () => {
+      AppStore.isPointerDownInForm = true;
+    };
+    const releaseFormPointerLatch = () => {
+      if (!AppStore.isPointerDownInForm && !AppStore.deferredFormRender) {
+        return;
+      }
+      AppStore.isPointerDownInForm = false;
+      if (AppStore.deferredFormRender) {
+        // Queue after mouseup + click complete in the current event turn
+        setTimeout(() => {
+          if (AppStore.deferredFormRender && !AppStore.isPointerDownInForm) {
+            renderActiveFormPanel(true);
+          }
+        }, 0);
+      }
+    };
+    formPanelEl?.addEventListener("pointerdown", markFormPointerDown);
+    formPanelEl?.addEventListener("mousedown", markFormPointerDown);
+    window.addEventListener("pointerup", releaseFormPointerLatch, true);
+    window.addEventListener("pointercancel", releaseFormPointerLatch, true);
+    window.addEventListener("mouseup", releaseFormPointerLatch, true);
 
     // Sync fixed-strategy Popper multi-select dropdown widths & viewport height
     const syncMultiSelectMenuGeometry = (toggleBtn) => {

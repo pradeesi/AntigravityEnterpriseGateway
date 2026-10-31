@@ -965,5 +965,34 @@ def test_sync_code_reports_false_on_malformed_json_and_recovers(client) -> None:
     assert client.get("/non-existent-endpoint").status_code == 404
 
 
+def test_single_click_delete_handlers_avoid_stale_state_closures(client) -> None:
+    """Verify `studio.js` and `studio.css` keep single-click `[x]` deletion race-free.
 
+    Summary:
+        Ensures `bindActiveFormEvents` resolves `AppStore.state` dynamically via
+        `getState()` rather than caching a detached `const s = AppStore.state`
+        closure across `/api/compile` round-trips, guards `#form-panel-container`
+        with `isPointerDownInForm` / `deferredFormRender`, and serves `.btn-row-delete`
+        hit-target styling.
+    Parameters:
+        client: Flask test client fixture.
+    Return Value:
+        None.
+    Exceptions/Errors:
+        AssertionError: If stale closure patterns reappear or `.btn-row-delete` is missing.
+    """
+    js_src = client.get("/static/js/studio.js").get_data(as_text=True)
+    css_src = client.get("/static/css/studio.css").get_data(as_text=True)
 
+    bind_idx = js_src.index("function bindActiveFormEvents(")
+    bind_end = js_src.index("function renderEditorHeaderOnly(", bind_idx)
+    bind_body = js_src[bind_idx:bind_end]
+
+    assert "const getState = () => AppStore.state;" in bind_body
+    assert "const s = AppStore.state;" not in bind_body
+    assert "isPointerDownInForm" in js_src
+    assert "deferredFormRender" in js_src
+    assert "nextUniqueIdentifier(" in bind_body
+    assert "refreshUniqueKeyFeedback(" in bind_body
+    assert "btn-row-delete" in js_src
+    assert ".btn-row-delete" in css_src
