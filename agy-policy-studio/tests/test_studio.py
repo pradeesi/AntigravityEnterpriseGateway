@@ -452,6 +452,11 @@ def test_progressive_dropdown_ui_and_per_file_lock_cli_and_selective_zip(client)
     assert 'id="dropdownFilesBtn"' in ui_html
     assert 'id="active-file-selector"' in ui_html
     assert 'id="step3-file-ref-card"' in ui_html
+    assert 'id="section-box-file-details" class="collapsible-section-box mb-2"' in ui_html
+    assert 'id="btn-toggle-file-details"' in ui_html
+    assert 'id="file-details-body" class="collapsible-section-body d-none"' in ui_html
+    assert 'id="section-box-file-lock" class="collapsible-section-box"' in ui_html
+    assert 'id="file-lock-cli-body" class="collapsible-section-body d-none"' in ui_html
     assert 'id="pre-file-lock-cmd"' in ui_html
     assert 'id="right-empty-state"' in ui_html
     assert "file-tab-strip" not in ui_html

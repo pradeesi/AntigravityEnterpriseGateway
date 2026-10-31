@@ -17,16 +17,16 @@
 
 :root,
 [data-bs-theme="light"] {
-  --studio-bg-app: hsl(210, 24%, 97%);
+  --studio-bg-app: hsl(210, 24%, 96.5%);
   --studio-bg-surface: hsl(0, 0%, 100%);
-  --studio-bg-subtle: hsl(210, 22%, 94.8%);
+  --studio-bg-subtle: hsl(210, 22%, 94.5%);
   --studio-bg-editor: hsl(210, 28%, 98.6%);
   --studio-bg-gutter: hsl(210, 20%, 94%);
-  --studio-border: hsl(214, 20%, 88%);
-  --studio-border-strong: hsl(214, 18%, 77%);
+  --studio-border: hsl(214, 20%, 83%);
+  --studio-border-strong: hsl(214, 20%, 71%);
   --studio-text-primary: hsl(215, 28%, 14%);
   --studio-text-secondary: hsl(215, 16%, 39%);
-  --studio-text-muted: hsl(215, 14%, 53%);
+  --studio-text-muted: hsl(215, 14%, 50%);
   --studio-accent: hsl(212, 86%, 42%);
   --studio-accent-hover: hsl(212, 86%, 35%);
   --studio-accent-soft: hsl(212, 88%, 95%);
@@ -36,7 +36,7 @@
   --studio-warn-soft: hsl(40, 92%, 94%);
   --studio-err: hsl(356, 75%, 44%);
   --studio-err-soft: hsl(356, 85%, 96%);
-  --studio-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --studio-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
   --studio-shadow-dropdown: 0 10px 26px rgba(15, 23, 42, 0.12);
   --studio-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --studio-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
@@ -45,14 +45,14 @@
 [data-bs-theme="dark"] {
   --studio-bg-app: hsl(216, 24%, 9%);
   --studio-bg-surface: hsl(216, 22%, 12.5%);
-  --studio-bg-subtle: hsl(216, 20%, 16%);
+  --studio-bg-subtle: hsl(216, 20%, 16.5%);
   --studio-bg-editor: hsl(216, 26%, 10.5%);
   --studio-bg-gutter: hsl(216, 22%, 13.5%);
-  --studio-border: hsl(215, 18%, 21%);
-  --studio-border-strong: hsl(215, 16%, 31%);
+  --studio-border: hsl(215, 18%, 25%);
+  --studio-border-strong: hsl(215, 18%, 36%);
   --studio-text-primary: hsl(210, 25%, 94%);
   --studio-text-secondary: hsl(214, 15%, 71%);
-  --studio-text-muted: hsl(214, 12%, 53%);
+  --studio-text-muted: hsl(214, 12%, 56%);
   --studio-accent: hsl(208, 88%, 60%);
   --studio-accent-hover: hsl(208, 90%, 67%);
   --studio-accent-soft: hsl(210, 52%, 19%);
@@ -62,7 +62,7 @@
   --studio-warn-soft: hsl(36, 46%, 17%);
   --studio-err: hsl(358, 82%, 65%);
   --studio-err-soft: hsl(358, 45%, 18%);
-  --studio-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --studio-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.32);
   --studio-shadow-dropdown: 0 12px 28px rgba(0, 0, 0, 0.45);
 }
 
@@ -165,10 +165,10 @@ body {
 .step-card,
 .section-block {
   background-color: var(--studio-bg-surface);
-  border: 1px solid var(--studio-border);
+  border: 1.5px solid var(--studio-border-strong);
   border-radius: 8px;
   padding: 0.9rem 1rem;
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.85rem;
   box-shadow: var(--studio-shadow-sm);
   min-width: 0;
 }
@@ -384,8 +384,33 @@ body {
 
 /* Left-Pane File Reference & Manual Lock Details */
 .ref-divider {
-  border-top: 1px solid var(--studio-border);
+  border-top: 1px solid var(--studio-border-strong);
   margin: 0.65rem 0;
+}
+
+.collapsible-section-box {
+  border: 1.5px solid var(--studio-border-strong);
+  border-radius: 7px;
+  background-color: var(--studio-bg-surface);
+  overflow: hidden;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.collapsible-section-box.is-expanded {
+  border-color: var(--studio-accent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.collapsible-section-body {
+  padding: 0.72rem 0.82rem;
+  background-color: var(--studio-bg-surface);
+  border-top: 1px solid var(--studio-border-strong);
+}
+
+.detail-item-group + .detail-item-group {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--studio-border);
 }
 
 .ref-field-label {
@@ -422,6 +447,10 @@ body {
   min-width: 0;
 }
 
+.target-path-row:last-child {
+  margin-bottom: 0;
+}
+
 .target-path-os {
   font-size: 0.71rem;
   font-weight: 700;
@@ -445,19 +474,34 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.42rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid var(--studio-border);
+  padding: 0.46rem 0.72rem;
+  border: none;
+  border-radius: 0;
   background-color: var(--studio-bg-subtle);
   color: var(--studio-text-primary);
-  font-size: 0.77rem;
+  font-size: 0.78rem;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
-  transition: border-color 0.14s ease, background-color 0.14s ease;
+  transition: background-color 0.14s ease, color 0.14s ease;
 }
 
 .lock-collapse-btn:hover {
-  border-color: var(--studio-border-strong);
+  background-color: var(--studio-accent-soft);
+}
+
+.collapse-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid var(--studio-border-strong);
+  background-color: var(--studio-bg-surface);
+  color: var(--studio-accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 /* Permission Rule Chips */

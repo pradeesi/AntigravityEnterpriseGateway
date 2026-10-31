@@ -82,6 +82,7 @@
     perFileCli: {},
     allFilesCli: BOOTSTRAP.initial.all_files_cli || {},
     selectedFileId: "",
+    fileDetailsExpanded: false,
     fileLockExpanded: false,
     selectedLockOs: "linux",
     refModalCliOs: "linux",
@@ -882,7 +883,20 @@
       });
     }
 
-    // Per-file manual permissions & lock/unlock commands
+    // Collapsible File Details (Purpose, Used by Surfaces & Target Paths)
+    const detailsBox = document.getElementById("section-box-file-details");
+    const detailsBody = document.getElementById("file-details-body");
+    const detailsToggleBtn = document.getElementById("btn-toggle-file-details");
+    const detailsChevron = document.getElementById("file-details-chevron");
+    if (detailsBody && detailsToggleBtn && detailsChevron) {
+      detailsBody.classList.toggle("d-none", !AppStore.fileDetailsExpanded);
+      detailsToggleBtn.setAttribute("aria-expanded", String(AppStore.fileDetailsExpanded));
+      detailsChevron.innerHTML = AppStore.fileDetailsExpanded ? "&#9652; Hide" : "&#9662; Show";
+      detailsBox?.classList.toggle("is-expanded", AppStore.fileDetailsExpanded);
+    }
+
+    // Collapsible Per-File Manual Permissions & Lock / Unlock Commands
+    const lockBox = document.getElementById("section-box-file-lock");
     const lockBody = document.getElementById("file-lock-cli-body");
     const toggleBtn = document.getElementById("btn-toggle-file-lock-cli");
     const chevron = document.getElementById("file-lock-chevron");
@@ -890,6 +904,7 @@
       lockBody.classList.toggle("d-none", !AppStore.fileLockExpanded);
       toggleBtn.setAttribute("aria-expanded", String(AppStore.fileLockExpanded));
       chevron.innerHTML = AppStore.fileLockExpanded ? "&#9652; Hide" : "&#9662; Show";
+      lockBox?.classList.toggle("is-expanded", AppStore.fileLockExpanded);
     }
 
     const cliForFile = AppStore.perFileCli[AppStore.selectedFileId] || {};
@@ -2833,6 +2848,8 @@
       AppStore.activeAbortController?.abort();
       AppStore.syncSeq += 1;
       AppStore.unparsedCodeFiles = {};
+      AppStore.fileDetailsExpanded = false;
+      AppStore.fileLockExpanded = false;
       AppStore.state.os_list = [];
       AppStore.state.surfaces = [];
       AppStore.state.selected_file_ids = [];
@@ -2980,7 +2997,12 @@
       renderValidationDrawer();
     });
 
-    // Step 3A: Collapsible Per-File Manual Permissions & Lock / Unlock CLI
+    // Step 3A: Collapsible File Details & Manual Permissions / Lock CLI
+    document.getElementById("btn-toggle-file-details")?.addEventListener("click", () => {
+      AppStore.fileDetailsExpanded = !AppStore.fileDetailsExpanded;
+      renderFileReferenceCard(AppStore.activeFileIds.length > 0);
+    });
+
     document.getElementById("btn-toggle-file-lock-cli")?.addEventListener("click", () => {
       AppStore.fileLockExpanded = !AppStore.fileLockExpanded;
       renderFileReferenceCard(AppStore.activeFileIds.length > 0);

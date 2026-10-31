@@ -243,6 +243,7 @@ Dependencies / Side Effects:
           <div id="step3-file-ref-card" class="step-card d-none">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
               <div class="d-flex align-items-center gap-2">
+                <span class="step-badge-num">3</span>
                 <span id="ref-group-badge" class="badge text-bg-secondary" style="font-size: 0.7rem;">Group 01</span>
                 <span id="ref-filename-label" class="fw-semibold mono-input" style="font-size: 0.83rem;">admin_settings.json</span>
               </div>
@@ -253,32 +254,42 @@ Dependencies / Side Effects:
 
             <div class="ref-divider"></div>
 
-            <!-- Purpose -->
-            <div class="mb-2">
-              <div class="ref-field-label">Purpose</div>
-              <div id="ref-file-purpose" class="text-body-secondary" style="font-size: 0.79rem;"></div>
-            </div>
-
-            <!-- Used by Surfaces -->
-            <div class="mb-2">
-              <div class="ref-field-label">Used by Surfaces</div>
-              <div id="ref-file-surfaces" class="d-flex flex-wrap gap-1"></div>
-            </div>
-
-            <!-- Full OS Target Path(s) -->
-            <div class="mb-2">
-              <div class="ref-field-label">Full Target File Path(s)</div>
-              <div id="ref-file-paths"></div>
-            </div>
-
-            <!-- Collapsible Manual File Permissions & Lock / Unlock Commands -->
-            <div class="mt-2 pt-1">
-              <button id="btn-toggle-file-lock-cli" type="button" class="lock-collapse-btn" aria-expanded="false">
-                <span>Manual File Permissions &amp; Lock / Unlock Commands</span>
-                <span id="file-lock-chevron" class="small text-body-secondary">&#9662; Show</span>
+            <!-- Collapsible Section 1: File Details (Purpose, Used by Surfaces, Full Target File Paths) -->
+            <div id="section-box-file-details" class="collapsible-section-box mb-2">
+              <button id="btn-toggle-file-details" type="button" class="lock-collapse-btn" aria-expanded="false" aria-controls="file-details-body">
+                <span>File Details (Purpose, Surfaces &amp; Target Paths)</span>
+                <span id="file-details-chevron" class="collapse-action-pill">&#9662; Show</span>
               </button>
 
-              <div id="file-lock-cli-body" class="mt-2 d-none">
+              <div id="file-details-body" class="collapsible-section-body d-none">
+                <!-- Purpose -->
+                <div class="detail-item-group">
+                  <div class="ref-field-label">Purpose</div>
+                  <div id="ref-file-purpose" class="text-body-secondary" style="font-size: 0.79rem;"></div>
+                </div>
+
+                <!-- Used by Surfaces -->
+                <div class="detail-item-group">
+                  <div class="ref-field-label">Used by Surfaces</div>
+                  <div id="ref-file-surfaces" class="d-flex flex-wrap gap-1"></div>
+                </div>
+
+                <!-- Full OS Target Path(s) -->
+                <div class="detail-item-group">
+                  <div class="ref-field-label">Full Target File Path(s)</div>
+                  <div id="ref-file-paths"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Collapsible Section 2: Manual File Permissions & Lock / Unlock Commands -->
+            <div id="section-box-file-lock" class="collapsible-section-box">
+              <button id="btn-toggle-file-lock-cli" type="button" class="lock-collapse-btn" aria-expanded="false" aria-controls="file-lock-cli-body">
+                <span>Manual File Permissions &amp; Lock / Unlock Commands</span>
+                <span id="file-lock-chevron" class="collapse-action-pill">&#9662; Show</span>
+              </button>
+
+              <div id="file-lock-cli-body" class="collapsible-section-body d-none">
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                   <div class="d-flex align-items-center gap-2">
                     <label for="select-file-lock-os" class="form-label-sm mb-0">OS</label>
@@ -293,12 +304,12 @@ Dependencies / Side Effects:
 
                 <div id="ref-perm-summary" class="text-body-secondary mb-2" style="font-size: 0.74rem;"></div>
 
-                <div class="mb-2">
+                <div class="detail-item-group">
                   <div class="ref-field-label">Set Permissions &amp; Lock File</div>
                   <pre id="pre-file-lock-cmd" class="cli-code-block"></pre>
                 </div>
 
-                <div>
+                <div class="detail-item-group">
                   <div class="ref-field-label">Maintenance Unlock</div>
                   <pre id="pre-file-unlock-cmd" class="cli-code-block"></pre>
                 </div>
