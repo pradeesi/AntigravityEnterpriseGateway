@@ -1165,3 +1165,41 @@ def test_symmetrical_dropdown_and_control_grid_alignment(client) -> None:
     assert "col-md-5" not in js
 
 
+def test_custom_surface_dropdowns_and_theme_ui_consistency(client) -> None:
+    """
+    Verify all single-select dropdowns and UI components use consistent white/theme surfaces.
+
+    Summary:
+        Prevents OS Dark Mode native `<select>` popups, dark `text-bg-dark` toasts,
+        dark `text-bg-secondary` badges, or hardcoded `text-bg-light` / `bg-body-tertiary`
+        surfaces from appearing out-of-place in Light or Dark themes.
+    Parameters:
+        client: Pytest Flask test client fixture.
+    Returns:
+        None.
+    Raises:
+        AssertionError: If custom dropdown decorator or theme tokens are missing.
+    """
+    html = client.get("/").get_data(as_text=True)
+    css = client.get("/static/css/studio.css").get_data(as_text=True)
+    js = client.get("/static/js/studio.js").get_data(as_text=True)
+
+    assert "color-scheme: light;" in css
+    assert "color-scheme: dark;" in css
+    assert ".studio-native-select-hidden" in css
+    assert ".studio-singleselect-btn" in css
+    assert ".studio-singleselect-menu" in css
+    assert ".ss-option-row" in css
+    assert ".studio-toast" in css
+    assert ".studio-badge-neutral" in css
+    assert ".studio-subcard" in css
+
+    assert "function syncStudioSingleSelects(" in js
+    assert "function syncDropdownMenuGeometry(" in js
+    assert "function buildSingleSelectMenuItems(" in js
+
+    for legacy_dark_cls in ("text-bg-dark", "text-bg-secondary", "text-bg-light", "bg-body-tertiary"):
+        assert legacy_dark_cls not in html, f"Legacy class {legacy_dark_cls} still in index.html"
+        assert legacy_dark_cls not in js, f"Legacy class {legacy_dark_cls} still in studio.js"
+
+

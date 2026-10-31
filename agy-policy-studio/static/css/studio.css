@@ -2,13 +2,15 @@
  * FILE HEADER: Design System & Responsive Layout — Antigravity Policy Studio
  * ============================================================================
  * Purpose:
- *   Defines HSL color tokens for Light (default) and Dark themes, typography,
- *   fluid split-pane workspace geometry, multi-select checkbox dropdowns,
- *   left-panel file reference rows, and live code editor styling on Bootstrap 5.3.
+ *   Defines HSL color tokens and explicit OS `color-scheme` locks for Light
+ *   (default) and Dark themes, typography, fluid split-pane workspace geometry,
+ *   custom single-select & multi-select surface dropdowns, unified buttons,
+ *   badges, toasts, modals, and live code editor styling on Bootstrap 5.3.
  *
  * Architecture / Context:
  *   Loaded by `templates/index.html`. Honors `[data-bs-theme="light"]` and
- *   `[data-bs-theme="dark"]` attributes toggled by `static/js/studio.js`.
+ *   `[data-bs-theme="dark"]` attributes toggled by `static/js/studio.js` so OS
+ *   Dark Mode never leaks dark native popups or scrollbars into Light Mode.
  *
  * Dependencies / Side Effects:
  *   Augments Bootstrap 5.3.3 CSS variables while preserving keyboard focus rings
@@ -17,6 +19,7 @@
 
 :root,
 [data-bs-theme="light"] {
+  color-scheme: light;
   --studio-bg-app: hsl(210, 24%, 96.5%);
   --studio-bg-surface: hsl(0, 0%, 100%);
   --studio-bg-subtle: hsl(210, 22%, 94.5%);
@@ -47,6 +50,7 @@
 }
 
 [data-bs-theme="dark"] {
+  color-scheme: dark;
   --studio-bg-app: hsl(216, 24%, 9%);
   --studio-bg-surface: hsl(216, 22%, 12.5%);
   --studio-bg-subtle: hsl(216, 20%, 16.5%);
@@ -257,8 +261,20 @@ body {
   opacity: 1;
 }
 
-/* Unified Control Geometry for Dropdowns, Native Selects & Text Inputs */
+/* Hide underlying native <select> once upgraded to custom .studio-singleselect DOM dropdown */
+.studio-native-select-hidden {
+  display: none !important;
+}
+
+.studio-singleselect {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Unified Control Geometry for Multi-Select, Single-Select Dropdowns & Text Inputs */
 .studio-multiselect-btn,
+.studio-singleselect-btn,
 .step-card .form-select,
 .section-block .form-select,
 .modal-body .form-select {
@@ -275,7 +291,8 @@ body {
 
 .step-card .form-select,
 .section-block .form-select,
-.modal-body .form-select {
+.modal-body .form-select,
+.drawer-tabs .form-select {
   padding: 0 2.05rem 0 var(--studio-control-px);
   background-image: var(--studio-chevron-bg);
   background-repeat: no-repeat;
@@ -286,18 +303,19 @@ body {
   white-space: nowrap;
 }
 
+.studio-singleselect-btn.mono-input,
 .step-card .form-select.mono-input,
 .section-block .form-select.mono-input {
   font-family: var(--studio-font-mono);
   font-size: 0.79rem;
 }
 
-.step-card .form-select.studio-select-compact {
+.studio-singleselect-btn.is-compact,
+.step-card .form-select.studio-select-compact,
+.drawer-tabs .form-select.studio-select-compact {
   height: 28px;
   font-size: 0.76rem;
-  padding: 0 1.85rem 0 0.55rem;
-  background-position: right 0.52rem center;
-  background-size: 12px 12px;
+  padding: 0 0.55rem;
 }
 
 .step-card .form-control,
@@ -314,6 +332,15 @@ body {
   transition: border-color 0.14s ease, box-shadow 0.14s ease, background-color 0.14s ease;
 }
 
+.modal-body textarea.form-control {
+  border: 1px solid var(--studio-border-strong);
+  border-radius: var(--studio-control-radius);
+  background-color: var(--studio-bg-surface);
+  color: var(--studio-text-primary);
+  font-size: 0.8rem;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
 .step-card .form-control.mono-input,
 .section-block .form-control.mono-input,
 .modal-body .form-control.mono-input:not(textarea) {
@@ -322,7 +349,8 @@ body {
 }
 
 .step-card .form-control::placeholder,
-.section-block .form-control::placeholder {
+.section-block .form-control::placeholder,
+.modal-body .form-control::placeholder {
   color: var(--studio-text-muted);
   opacity: 1;
 }
@@ -346,15 +374,19 @@ body {
   border-bottom-right-radius: var(--studio-control-radius);
 }
 
-.studio-multiselect-btn:hover,
-.step-card .form-select:hover,
-.section-block .form-select:hover,
+.studio-multiselect-btn:hover:not(:disabled),
+.studio-singleselect-btn:hover:not(:disabled),
+.step-card .form-select:hover:not(:disabled),
+.section-block .form-select:hover:not(:disabled),
 .step-card .form-control:hover:not(:disabled),
 .section-block .form-control:hover:not(:disabled) {
   border-color: var(--studio-accent);
 }
 
 .studio-multiselect-btn:focus,
+.studio-singleselect-btn:focus,
+.studio-multiselect-btn[aria-expanded="true"],
+.studio-singleselect-btn[aria-expanded="true"],
 .step-card .form-select:focus,
 .section-block .form-select:focus,
 .modal-body .form-select:focus,
@@ -380,8 +412,9 @@ body {
   box-shadow: 0 0 0 2.5px var(--studio-err-soft);
 }
 
-/* Multi-Select Checkbox Dropdowns (Zero Horizontal Button Overflow & Identical Chevron) */
-.studio-multiselect-btn {
+/* Custom Multi-Select & Single-Select Surface Dropdowns (Zero Native Dark OS Popups) */
+.studio-multiselect-btn,
+.studio-singleselect-btn {
   width: 100%;
   display: flex;
   align-items: center;
@@ -390,9 +423,17 @@ body {
   text-align: left;
   padding: 0 var(--studio-control-px);
   min-width: 0;
+  cursor: pointer;
 }
 
-.studio-multiselect-btn.dropdown-toggle::after {
+.studio-singleselect-btn:disabled {
+  background-color: var(--studio-bg-subtle);
+  color: var(--studio-text-muted);
+  cursor: not-allowed;
+}
+
+.studio-multiselect-btn.dropdown-toggle::after,
+.studio-singleselect-btn.dropdown-toggle::after {
   border: 0;
   width: 13px;
   height: 13px;
@@ -403,14 +444,22 @@ body {
   background-repeat: no-repeat;
   background-position: center;
   background-size: 13px 13px;
+  transition: transform 0.15s ease;
 }
 
-.studio-multiselect-btn.is-placeholder {
+.studio-multiselect-btn.dropdown-toggle[aria-expanded="true"]::after,
+.studio-singleselect-btn.dropdown-toggle[aria-expanded="true"]::after {
+  transform: rotate(180deg);
+}
+
+.studio-multiselect-btn.is-placeholder,
+.studio-singleselect-btn.is-placeholder {
   color: var(--studio-text-muted);
   font-weight: 400;
 }
 
-.studio-multiselect-btn .ms-label {
+.studio-multiselect-btn .ms-label,
+.studio-singleselect-btn .ss-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -429,17 +478,108 @@ body {
   flex-shrink: 0;
 }
 
-.studio-multiselect-menu {
-  min-width: 245px;
+.studio-multiselect-menu,
+.studio-singleselect-menu {
+  min-width: 210px;
   max-width: min(94vw, 640px);
   max-height: calc(100vh - 96px);
   overflow-y: auto;
-  padding: 0.4rem;
+  padding: 0.38rem;
   background-color: var(--studio-bg-surface);
   border: 1px solid var(--studio-border-strong);
   border-radius: 8px;
   box-shadow: var(--studio-shadow-dropdown);
   z-index: 1085;
+}
+
+.studio-multiselect-menu {
+  min-width: 245px;
+}
+
+.ss-group-divider {
+  border-top: 1px solid var(--studio-border);
+  margin: 0.28rem 0.2rem 0.16rem;
+}
+
+.ss-group-header {
+  font-size: 0.69rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--studio-text-muted);
+  padding: 0.3rem 0.48rem 0.2rem;
+  user-select: none;
+}
+
+.ss-option-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.34rem 0.48rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--studio-text-primary);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.ss-option-row:hover,
+.ss-option-row:focus-visible {
+  background-color: var(--studio-bg-subtle);
+  outline: none;
+}
+
+.ss-option-row.is-selected {
+  background-color: var(--studio-accent-soft);
+}
+
+.ss-option-row:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ss-option-text-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.ss-option-title {
+  font-size: 0.79rem;
+  font-weight: 500;
+  color: var(--studio-text-primary);
+  line-height: 1.28;
+  word-break: break-word;
+}
+
+.ss-option-row.is-selected .ss-option-title {
+  color: var(--studio-accent);
+  font-weight: 600;
+}
+
+.ss-option-sub {
+  font-size: 0.7rem;
+  color: var(--studio-text-muted);
+  line-height: 1.22;
+  margin-top: 0.08rem;
+}
+
+.ss-check-icon {
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--studio-accent);
+  opacity: 0;
+  flex-shrink: 0;
+  padding-top: 0.02rem;
+}
+
+.ss-option-row.is-selected .ss-check-icon {
+  opacity: 1;
 }
 
 .ms-menu-toolbar {
@@ -973,3 +1113,175 @@ body {
   word-break: break-word;
   margin: 0;
 }
+
+/* Unified Theme-Consistent Buttons, Badges, Checkboxes, Sub-Cards, Modals & Toasts */
+.btn-outline-secondary {
+  background-color: var(--studio-bg-surface);
+  border-color: var(--studio-border-strong);
+  color: var(--studio-text-primary);
+  font-weight: 500;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus-visible,
+.btn-outline-secondary:active {
+  background-color: var(--studio-bg-subtle) !important;
+  border-color: var(--studio-accent) !important;
+  color: var(--studio-accent) !important;
+  box-shadow: none;
+}
+
+.btn-outline-primary {
+  background-color: var(--studio-bg-surface);
+  border-color: var(--studio-accent);
+  color: var(--studio-accent);
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus-visible,
+.btn-outline-primary:active {
+  background-color: var(--studio-accent-soft) !important;
+  border-color: var(--studio-accent-hover) !important;
+  color: var(--studio-accent-hover) !important;
+  box-shadow: none;
+}
+
+.btn-primary {
+  background-color: var(--studio-accent);
+  border-color: var(--studio-accent);
+  color: #ffffff;
+  transition: background-color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+}
+
+.btn-primary:hover,
+.btn-primary:focus-visible,
+.btn-primary:active {
+  background-color: var(--studio-accent-hover) !important;
+  border-color: var(--studio-accent-hover) !important;
+  color: #ffffff !important;
+}
+
+.btn-primary:disabled,
+.btn-primary.disabled {
+  background-color: var(--studio-bg-subtle);
+  border-color: var(--studio-border);
+  color: var(--studio-text-muted);
+  opacity: 1;
+}
+
+.studio-topbar .btn-sm {
+  height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.72rem;
+  font-size: 0.78rem;
+  border-radius: 6px;
+}
+
+/* Theme-Aware Semantic & Neutral Badges (Replaces dark charcoal .text-bg-secondary) */
+.studio-badge-neutral {
+  background-color: var(--studio-bg-subtle);
+  color: var(--studio-text-secondary);
+  border: 1px solid var(--studio-border);
+  font-weight: 600;
+}
+
+.studio-badge-primary {
+  background-color: var(--studio-accent-soft);
+  color: var(--studio-accent);
+  border: 1px solid var(--studio-accent);
+  font-weight: 600;
+}
+
+/* Unified Checkboxes & Toggle Switches */
+.form-check-input {
+  background-color: var(--studio-bg-surface);
+  border-color: var(--studio-border-strong);
+  cursor: pointer;
+}
+
+.form-check-input:checked {
+  background-color: var(--studio-accent);
+  border-color: var(--studio-accent);
+}
+
+.form-check-input:focus {
+  border-color: var(--studio-accent);
+  box-shadow: 0 0 0 2.5px var(--studio-accent-soft);
+}
+
+/* Sub-Cards, Modal Chrome & Segmented Import Pill Tabs */
+.studio-subcard {
+  background-color: var(--studio-bg-subtle);
+  border: 1px solid var(--studio-border);
+  border-radius: 7px;
+}
+
+.studio-modal-toolbar {
+  background-color: var(--studio-bg-subtle);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.modal-content {
+  background-color: var(--studio-bg-surface);
+  color: var(--studio-text-primary);
+  border: 1px solid var(--studio-border-strong);
+  border-radius: 10px;
+  box-shadow: var(--studio-shadow-dropdown);
+}
+
+.modal-header {
+  background-color: var(--studio-bg-surface);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+#importModeTabs .nav-link {
+  background-color: var(--studio-bg-subtle);
+  border: 1px solid var(--studio-border);
+  color: var(--studio-text-secondary);
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+#importModeTabs .nav-link:hover {
+  border-color: var(--studio-accent);
+  color: var(--studio-text-primary);
+}
+
+#importModeTabs .nav-link.active {
+  background-color: var(--studio-accent-soft);
+  border-color: var(--studio-accent);
+  color: var(--studio-accent);
+  font-weight: 600;
+}
+
+/* Theme-Consistent Surface Toast Card (Replaces pitch-black .text-bg-dark in Light Mode) */
+.studio-toast {
+  background-color: var(--studio-bg-surface);
+  color: var(--studio-text-primary);
+  border: 1px solid var(--studio-border-strong);
+  border-left: 4px solid var(--studio-accent);
+  border-radius: 8px;
+  box-shadow: var(--studio-shadow-dropdown);
+}
+
+.studio-toast.toast-info {
+  border-left-color: var(--studio-accent);
+}
+
+.studio-toast.toast-success {
+  border-left-color: var(--studio-ok);
+}
+
+.studio-toast.toast-warning {
+  border-left-color: var(--studio-warn);
+}
+
+.studio-toast.toast-danger {
+  border-left-color: var(--studio-err);
+}
+

@@ -260,7 +260,7 @@ Dependencies / Side Effects:
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
               <div class="d-flex align-items-center gap-2">
                 <span class="step-badge-num">3</span>
-                <span id="ref-group-badge" class="badge text-bg-secondary" style="font-size: 0.7rem;">Group 01</span>
+                <span id="ref-group-badge" class="badge studio-badge-neutral" style="font-size: 0.7rem;">Group 01</span>
                 <span id="ref-filename-label" class="fw-semibold mono-input" style="font-size: 0.83rem;">admin_settings.json</span>
               </div>
               <a id="ref-doc-link" href="https://docs.cloud.google.com/gemini/enterprise/docs/ai-developer-tools/deploy-enterprise-gateway?hl=en" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-medium" style="font-size: 0.76rem;">
@@ -389,7 +389,7 @@ Dependencies / Side Effects:
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
               <div class="d-flex flex-wrap align-items-center gap-2">
                 <span id="active-file-title" class="fw-semibold mono-input" style="font-size: 0.86rem;">admin_settings.json</span>
-                <span id="sync-status-pill" class="badge text-bg-light border fw-normal" style="font-size: 0.7rem;">Two-Way Synced</span>
+                <span id="sync-status-pill" class="badge studio-badge-neutral fw-normal" style="font-size: 0.7rem;">Two-Way Synced</span>
                 <span id="global-validation-badge" class="badge rounded-pill status-badge-pass px-2 py-1" style="font-size: 0.72rem;">PASS &middot; 0 Issues</span>
                 <button id="btn-fix-all" type="button" class="btn btn-sm btn-warning py-0 px-2 fw-semibold d-none" style="font-size: 0.73rem; height: 24px;">
                   Auto-Fix All
@@ -415,12 +415,12 @@ Dependencies / Side Effects:
           <div class="drawer-tabs">
             <div class="d-flex align-items-center gap-2">
               <span class="fw-semibold" style="font-size: 0.78rem;">Real-Time Validation</span>
-              <span id="drawer-issue-count" class="badge text-bg-secondary" style="font-size: 0.7rem;">0</span>
+              <span id="drawer-issue-count" class="badge studio-badge-neutral" style="font-size: 0.7rem;">0</span>
             </div>
 
             <div class="d-flex align-items-center gap-2">
               <label for="select-validation-scope" class="visually-hidden">Validation Issue Scope</label>
-              <select id="select-validation-scope" class="form-select form-select-sm py-0" style="font-size: 0.74rem; height: 26px; width: auto;">
+              <select id="select-validation-scope" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 158px;">
                 <option value="active" selected>Active File Issues</option>
                 <option value="all">All Selected Files</option>
               </select>
@@ -479,7 +479,9 @@ Dependencies / Side Effects:
             <div class="tab-pane fade" id="pane-paste" role="tabpanel">
               <div class="row g-2 mb-2">
                 <div class="col-sm-6">
-                  <label for="paste-file-type" class="form-label-sm">Target Config Type (or Auto-Detect)</label>
+                  <div class="studio-field-label-row">
+                    <label for="paste-file-type" class="form-label-sm">Target Config Type (or Auto-Detect)</label>
+                  </div>
                   <select id="paste-file-type" class="form-select form-select-sm">
                     <option value="">Auto-detect from content</option>
                     <option value="admin_settings">01 &middot; admin_settings.json</option>
@@ -507,7 +509,7 @@ Dependencies / Side Effects:
 
             <!-- Tab 3: Sibling Repo Baseline -->
             <div class="tab-pane fade" id="pane-repo" role="tabpanel">
-              <div class="p-3 border rounded bg-body-tertiary">
+              <div class="p-3 studio-subcard">
                 <div class="fw-semibold mb-1">Load Canonical 8-Module Baseline (<code>../agy-config/configs/</code>)</div>
                 <p class="small text-body-secondary mb-2">
                   Imports all 8 live-validated enterprise policy modules (including the full 595-rule CLI &amp; Desktop allow/ask/deny set, MCP catalog, guard scripts, and ACP configs) directly into the studio with your current workstation username.
@@ -533,10 +535,10 @@ Dependencies / Side Effects:
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
 
-        <div class="px-3 py-2 border-bottom bg-body-tertiary d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="px-3 py-2 studio-modal-toolbar d-flex flex-wrap align-items-center justify-content-between gap-2">
           <div class="d-flex align-items-center gap-2">
             <label for="select-ref-section" class="form-label-sm mb-0">Show Section</label>
-            <select id="select-ref-section" class="form-select form-select-sm" style="width: auto; min-width: 265px;">
+            <select id="select-ref-section" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 265px;">
               <option value="all" selected>All Reference Tables (1 &ndash; 3)</option>
               <option value="os">1. Minimum OS Requirements (Win / Mac / Linux)</option>
               <option value="versions">2. Minimum Antigravity Versions (CLI / Desktop / Web / IDEs)</option>
@@ -546,7 +548,7 @@ Dependencies / Side Effects:
 
           <div class="d-flex align-items-center gap-2">
             <label for="select-ref-cli-os" class="form-label-sm mb-0">Table 3 Target OS &amp; Admin CLI</label>
-            <select id="select-ref-cli-os" class="form-select form-select-sm" style="width: auto; min-width: 225px;">
+            <select id="select-ref-cli-os" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 225px;">
               <option value="linux" selected>Linux (chmod + chattr +i)</option>
               <option value="macos">macOS (chmod + chflags schg)</option>
               <option value="windows">Windows (BOM-free + attrib + icacls)</option>
@@ -623,10 +625,10 @@ Dependencies / Side Effects:
     </div>
   </div>
 
-  <!-- Subtle Notification Toast -->
+  <!-- Theme-Consistent Notification Toast -->
   <div class="toast-container position-fixed bottom-0 end-0 p-3">
-    <div id="studio-toast" class="toast align-items-center border-0" role="status" aria-live="polite" aria-atomic="true">
-      <div class="d-flex">
+    <div id="studio-toast" class="toast studio-toast toast-info align-items-center" role="status" aria-live="polite" aria-atomic="true">
+      <div class="d-flex align-items-center">
         <div id="studio-toast-body" class="toast-body small fw-medium"></div>
         <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
       </div>

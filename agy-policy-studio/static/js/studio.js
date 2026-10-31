@@ -372,11 +372,11 @@
       return;
     }
     if (mode === "syntax_error") {
-      syncPill.className = "badge text-bg-warning border fw-semibold";
+      syncPill.className = "badge status-badge-warn fw-semibold";
       syncPill.textContent = "Syntax Error — Fix JSON to Sync";
       return;
     }
-    syncPill.className = "badge text-bg-light border fw-normal";
+    syncPill.className = "badge studio-badge-neutral fw-normal";
     if (mode === "syncing") {
       syncPill.textContent = "Syncing...";
     } else if (mode === "parsing") {
@@ -405,24 +405,313 @@
   }
 
   /**
-   * Display a concise non-blocking notification toast in the bottom-right corner.
+   * Display a concise, theme-consistent notification toast in the bottom-right corner.
    *
-   * @summary Renders feedback for copy, import, auto-fix, and export actions.
+   * @summary Uses `.studio-toast` surface tokens with a semantic accent border instead
+   *   of hardcoded dark Bootstrap backgrounds so Light and Dark modes stay cohesive.
    * @param {string} message - Notification text to display.
-   * @param {string} [variant="dark"] - Bootstrap text-bg class suffix.
+   * @param {string} [variant="info"] - Semantic variant (`"info"`, `"primary"`, `"dark"`, `"success"`, `"warning"`, `"danger"`).
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
-  function showToast(message, variant = "dark") {
+  function showToast(message, variant = "info") {
     const toastEl = document.getElementById("studio-toast");
     const bodyEl = document.getElementById("studio-toast-body");
     if (!toastEl || !bodyEl) {
       return;
     }
-    toastEl.className = `toast align-items-center border-0 text-bg-${variant}`;
+    const tone =
+      variant === "success" || variant === "warning" || variant === "danger"
+        ? variant
+        : "info";
+    toastEl.className = `toast studio-toast toast-${tone} align-items-center`;
     bodyEl.textContent = message;
     const instance = window.bootstrap.Toast.getOrCreateInstance(toastEl, { delay: 2600 });
     instance.show();
+  }
+
+  /**
+   * Synchronize Popper fixed-strategy dropdown menu width and max-height with its trigger button.
+   *
+   * @summary Keeps both `.studio-multiselect-menu` and `.studio-singleselect-menu`
+   *   flush with the trigger width (with a readable minimum width on compact controls)
+   *   and prevents viewport clipping.
+   * @param {HTMLElement|null} toggleBtn - Dropdown trigger button element.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function syncDropdownMenuGeometry(toggleBtn) {
+    if (!toggleBtn) {
+      return;
+    }
+    const menu = toggleBtn.parentElement?.querySelector(
+      ".studio-multiselect-menu, .studio-singleselect-menu"
+    );
+    if (!menu) {
+      return;
+    }
+    const isMulti = menu.classList.contains("studio-multiselect-menu");
+    const minMenuWidth = isMulti ? 245 : 210;
+    const btnRect = toggleBtn.getBoundingClientRect();
+    menu.style.width = `${Math.max(Math.round(btnRect.width), minMenuWidth)}px`;
+    const topbarHeight = document.querySelector(".studio-topbar")?.offsetHeight || 56;
+    const spaceBelow = window.innerHeight - btnRect.bottom - 16;
+    const spaceAbove = btnRect.top - topbarHeight - 12;
+    const bestSpace = Math.max(spaceBelow, spaceAbove, 220);
+    menu.style.maxHeight = `${Math.round(bestSpace)}px`;
+  }
+
+  /**
+   * Split an option label on `" — "` into primary title and secondary subtitle text.
+   *
+   * @summary Renders descriptive options cleanly on two lines inside `.studio-singleselect-menu`,
+   *   matching the visual hierarchy of `.studio-multiselect-menu`.
+   * @param {string} rawText - Full option display text.
+   * @returns {{title: string, sub: string}} Parsed title and optional subtitle.
+   * @throws {never} Never throws.
+   */
+  function splitOptionTitleAndSub(rawText) {
+    const clean = String(rawText || "").trim();
+    const sepIdx = clean.indexOf(" — ");
+    if (sepIdx > 0) {
+      return {
+        title: clean.slice(0, sepIdx).trim(),
+        sub: clean.slice(sepIdx + 3).trim(),
+      };
+    }
+    return { title: clean, sub: "" };
+  }
+
+  /**
+   * Refresh the visible `.studio-singleselect-btn` label, placeholder styling, and active row state.
+   *
+   * @summary Synchronizes the custom button with `selectEl.selectedIndex` and `selectEl.disabled`.
+   * @param {HTMLSelectElement} selectEl - Underlying `<select>` element.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function refreshSingleSelectDisplay(selectEl) {
+    const wrap = selectEl?._studioDropdownWrap;
+    if (!wrap) {
+      return;
+    }
+    const btn = wrap.querySelector(".studio-singleselect-btn");
+    const labelSpan = btn?.querySelector(".ss-label");
+    const menu = wrap.querySelector(".studio-singleselect-menu");
+    if (!btn || !labelSpan) {
+      return;
+    }
+
+    btn.disabled = Boolean(selectEl.disabled);
+    const selIdx = selectEl.selectedIndex;
+    const selOpt = selIdx >= 0 ? selectEl.options[selIdx] : selectEl.options[0];
+    const text = selOpt ? selOpt.textContent.trim() : "";
+    labelSpan.textContent = text;
+
+    const isPlaceholderOpt =
+      Boolean(selOpt) && selOpt.value === "" && text.endsWith("...");
+    btn.classList.toggle("is-placeholder", isPlaceholderOpt);
+
+    if (menu) {
+      menu.querySelectorAll(".ss-option-row").forEach((row) => {
+        const idx = Number(row.dataset.optionIndex);
+        const active = idx === selIdx;
+        row.classList.toggle("is-selected", active);
+        row.setAttribute("aria-selected", String(active));
+      });
+    }
+  }
+
+  /**
+   * Populate `<optgroup>` section headers and `.ss-option-row` items inside a custom single-select menu.
+   *
+   * @summary Mirrors `selectEl` children (`<optgroup>` and `<option>`) into theme-consistent
+   *   Bootstrap dropdown DOM rows with zero native OS popup rendering.
+   * @param {HTMLSelectElement} selectEl - Underlying `<select>` element.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function buildSingleSelectMenuItems(selectEl) {
+    const wrap = selectEl?._studioDropdownWrap;
+    if (!wrap) {
+      return;
+    }
+    const btn = wrap.querySelector(".studio-singleselect-btn");
+    const menu = wrap.querySelector(".studio-singleselect-menu");
+    if (!btn || !menu) {
+      return;
+    }
+
+    const allOptions = Array.from(selectEl.options);
+    const selIdx = selectEl.selectedIndex;
+    let html = "";
+    let renderedAnyGroup = false;
+
+    const renderOptionButton = (optEl) => {
+      const optIndex = allOptions.indexOf(optEl);
+      const isSelected = optIndex === selIdx;
+      const parsed = splitOptionTitleAndSub(optEl.textContent);
+      const title = parsed.title;
+      const sub = (optEl.dataset.optionSub || parsed.sub || "").trim();
+      const subHtml = sub ? `<div class="ss-option-sub">${escapeHtml(sub)}</div>` : "";
+      return `
+        <button type="button" class="ss-option-row ${isSelected ? "is-selected" : ""}" role="option" aria-selected="${isSelected}" data-option-index="${optIndex}" ${optEl.disabled ? "disabled" : ""}>
+          <div class="ss-option-text-wrap">
+            <div class="ss-option-title">${escapeHtml(title)}</div>
+            ${subHtml}
+          </div>
+          <span class="ss-check-icon" aria-hidden="true">&#10003;</span>
+        </button>`;
+    };
+
+    Array.from(selectEl.children).forEach((child) => {
+      if (child.tagName === "OPTGROUP") {
+        if (renderedAnyGroup) {
+          html += `<div class="ss-group-divider" role="separator"></div>`;
+        }
+        renderedAnyGroup = true;
+        const grpLabel = child.getAttribute("label") || "";
+        if (grpLabel) {
+          html += `<div class="ss-group-header">${escapeHtml(grpLabel)}</div>`;
+        }
+        Array.from(child.children).forEach((opt) => {
+          if (opt.tagName === "OPTION") {
+            html += renderOptionButton(opt);
+          }
+        });
+      } else if (child.tagName === "OPTION") {
+        html += renderOptionButton(child);
+      }
+    });
+
+    menu.innerHTML = html;
+    menu.querySelectorAll(".ss-option-row").forEach((row) => {
+      row.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        const optIndex = Number(row.dataset.optionIndex);
+        if (Number.isNaN(optIndex) || optIndex < 0 || optIndex >= selectEl.options.length) {
+          return;
+        }
+        try {
+          window.bootstrap.Dropdown.getOrCreateInstance(btn).hide();
+        } catch {
+          // Safe guard if dropdown instance was already disposed
+        }
+        if (selectEl.selectedIndex !== optIndex) {
+          selectEl.selectedIndex = optIndex;
+          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        if (selectEl.isConnected) {
+          refreshSingleSelectDisplay(selectEl);
+        }
+      });
+    });
+  }
+
+  /**
+   * Upgrade all `<select class="form-select">` elements within `root` into custom
+   * white-surface `.dropdown.studio-singleselect` components.
+   *
+   * @summary Eliminates native macOS/Windows dark OS `<select>` popups while keeping
+   *   every `<select>` ID, `.value`, and `change` listener 100% compatible.
+   * @param {Document|HTMLElement} [root=document] - Container scope to scan and sync.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function syncStudioSingleSelects(root = document) {
+    if (!root) {
+      return;
+    }
+    const selects = [];
+    if (root instanceof HTMLSelectElement && root.classList.contains("form-select")) {
+      selects.push(root);
+    } else if (typeof root.querySelectorAll === "function") {
+      root.querySelectorAll("select.form-select").forEach((el) => selects.push(el));
+    }
+
+    selects.forEach((selectEl) => {
+      selectEl.classList.add("studio-native-select-hidden");
+
+      if (!selectEl._studioDropdownWrap || !selectEl._studioDropdownWrap.isConnected) {
+        const wrap = document.createElement("div");
+        wrap.className = "dropdown studio-singleselect";
+        ["width", "minWidth", "maxWidth", "flex"].forEach((prop) => {
+          if (selectEl.style[prop]) {
+            wrap.style[prop] = selectEl.style[prop];
+          }
+        });
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "studio-singleselect-btn dropdown-toggle";
+        if (selectEl.classList.contains("studio-select-compact")) {
+          btn.classList.add("is-compact");
+        }
+        if (selectEl.classList.contains("mono-input")) {
+          btn.classList.add("mono-input");
+        }
+        if (selectEl.id) {
+          btn.id = `${selectEl.id}DropdownBtn`;
+          btn.dataset.singleSelectFor = selectEl.id;
+        }
+        if (selectEl.hasAttribute("data-mcp-transport")) {
+          btn.dataset.mcpTransportBtn = selectEl.getAttribute("data-mcp-transport");
+        }
+        btn.setAttribute("data-bs-toggle", "dropdown");
+        btn.setAttribute("data-bs-popper-config", '{"strategy":"fixed"}');
+        btn.setAttribute("aria-expanded", "false");
+        btn.setAttribute("aria-haspopup", "listbox");
+        btn.innerHTML = '<span class="ss-label"></span>';
+
+        const menu = document.createElement("div");
+        menu.className = "dropdown-menu studio-singleselect-menu";
+        menu.setAttribute("role", "listbox");
+        if (btn.id) {
+          menu.setAttribute("aria-labelledby", btn.id);
+        }
+
+        wrap.appendChild(btn);
+        wrap.appendChild(menu);
+        selectEl.insertAdjacentElement("afterend", wrap);
+        selectEl._studioDropdownWrap = wrap;
+
+        wrap.addEventListener("show.bs.dropdown", () => {
+          buildSingleSelectMenuItems(selectEl);
+          refreshSingleSelectDisplay(selectEl);
+          syncDropdownMenuGeometry(btn);
+        });
+        wrap.addEventListener("shown.bs.dropdown", () => {
+          syncDropdownMenuGeometry(btn);
+          const activeRow = menu.querySelector(".ss-option-row.is-selected");
+          activeRow?.scrollIntoView({ block: "nearest" });
+        });
+
+        if (!selectEl._studioChangeSynced) {
+          selectEl._studioChangeSynced = true;
+          selectEl.addEventListener("change", () => {
+            refreshSingleSelectDisplay(selectEl);
+          });
+        }
+
+        if (selectEl.id) {
+          const assocLabel = document.querySelector(`label[for="${CSS.escape(selectEl.id)}"]`);
+          if (assocLabel && !assocLabel.dataset.ssLabelBound) {
+            assocLabel.dataset.ssLabelBound = "1";
+            assocLabel.addEventListener("click", (ev) => {
+              const curBtn = selectEl._studioDropdownWrap?.querySelector(".studio-singleselect-btn");
+              if (curBtn && !curBtn.disabled) {
+                ev.preventDefault();
+                curBtn.focus();
+                window.bootstrap.Dropdown.getOrCreateInstance(curBtn).toggle();
+              }
+            });
+          }
+        }
+      }
+
+      buildSingleSelectMenuItems(selectEl);
+      refreshSingleSelectDisplay(selectEl);
+    });
   }
 
   /**
@@ -492,11 +781,12 @@
       html += `<optgroup label="${escapeHtml(cat)}">`;
       groups[cat].forEach((p) => {
         const sel = p.id === AppStore.state.active_preset ? "selected" : "";
-        html += `<option value="${escapeHtml(p.id)}" ${sel}>${escapeHtml(p.label)}</option>`;
+        html += `<option value="${escapeHtml(p.id)}" data-option-sub="${escapeHtml(p.description || "")}" ${sel}>${escapeHtml(p.label)}</option>`;
       });
       html += "</optgroup>";
     });
     selectEl.innerHTML = html;
+    syncStudioSingleSelects(selectEl);
     updatePresetDescriptionHint();
   }
 
@@ -693,7 +983,7 @@
           (row) => `
           <tr>
             <td class="fw-semibold">${escapeHtml(row.surface)}</td>
-            <td><span class="badge text-bg-light border text-wrap text-start fw-semibold" style="font-size: 0.72rem;">${escapeHtml(row.min_version)}</span></td>
+            <td><span class="badge studio-badge-neutral text-wrap text-start fw-semibold" style="font-size: 0.72rem;">${escapeHtml(row.min_version)}</span></td>
             <td>${escapeHtml(row.platforms_protocols)}</td>
             <td>${escapeHtml(row.notes)}</td>
             <td>
@@ -715,6 +1005,12 @@
         const cliBlock = AppStore.allFilesCli?.[item.id]?.[cliOs]?.lock || "";
         const surfacesText = (item.surface_details || item.surfaces).join(", ");
         const badgeVariant = item.mandatory_variant || "secondary";
+        const badgeClass =
+          badgeVariant === "secondary"
+            ? "studio-badge-neutral"
+            : badgeVariant === "primary"
+              ? "studio-badge-primary"
+              : `text-bg-${escapeHtml(badgeVariant)}`;
         const badgeText = item.mandatory_status || "Optional";
 
         const pathHtml = rawPath
@@ -722,7 +1018,7 @@
                <code class="text-break" style="font-size: 0.7rem;">${escapeHtml(rawPath)}</code>
                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 flex-shrink-0" style="font-size: 0.66rem; height: 20px;" data-ref-copy-path="${escapeHtml(primaryPath)}">Copy</button>
              </div>`
-          : `<div class="mt-1"><span class="badge text-bg-light border text-body-secondary">Not used on ${escapeHtml(OS_DISPLAY[cliOs] || cliOs)}</span></div>`;
+          : `<div class="mt-1"><span class="badge studio-badge-neutral">Not used on ${escapeHtml(OS_DISPLAY[cliOs] || cliOs)}</span></div>`;
 
         const cliHtml = cliBlock
           ? `<div>
@@ -743,7 +1039,7 @@
             <td style="font-size: 0.73rem;">${escapeHtml(surfacesText)}</td>
             <td style="font-size: 0.74rem;">${escapeHtml(item.summary)}</td>
             <td>
-              <span class="badge text-bg-${escapeHtml(badgeVariant)} mb-1">${escapeHtml(badgeText)}</span>
+              <span class="badge ${badgeClass} mb-1">${escapeHtml(badgeText)}</span>
               <div class="text-body-secondary" style="font-size: 0.71rem; line-height: 1.3;">${escapeHtml(item.mandatory_note || "")}</div>
             </td>
             <td>${cliHtml}</td>
@@ -758,7 +1054,7 @@
       tbodyFiles.querySelectorAll("[data-ref-copy-path]").forEach((btn) => {
         btn.addEventListener("click", () => {
           navigator.clipboard?.writeText(btn.dataset.refCopyPath);
-          showToast(`Copied path: ${btn.dataset.refCopyPath}`, "dark");
+          showToast(`Copied path: ${btn.dataset.refCopyPath}`, "info");
         });
       });
 
@@ -768,7 +1064,7 @@
           const cmd = AppStore.allFilesCli?.[fid]?.[cliOs]?.lock || "";
           if (cmd) {
             navigator.clipboard?.writeText(cmd);
-            showToast(`Copied ${OS_DISPLAY[cliOs]} Admin CLI for ${CATALOG_BY_ID[fid]?.filename || fid}`, "dark");
+            showToast(`Copied ${OS_DISPLAY[cliOs]} Admin CLI for ${CATALOG_BY_ID[fid]?.filename || fid}`, "info");
           }
         });
       });
@@ -888,6 +1184,7 @@
     const syncSelect = document.getElementById("select-perm-sync");
     if (syncSelect) {
       syncSelect.value = AppStore.state.sync_permissions ? "linked" : "separate";
+      syncStudioSingleSelects(syncSelect);
     }
   }
 
@@ -914,6 +1211,7 @@
     const presetEl = document.getElementById("preset-selector");
     if (presetEl && AppStore.state.active_preset) {
       presetEl.value = AppStore.state.active_preset;
+      syncStudioSingleSelects(presetEl);
     }
     updatePresetDescriptionHint();
 
@@ -1014,6 +1312,7 @@
             return `<option value="${escapeHtml(fid)}" ${sel}>[${escapeHtml(st)}] ${escapeHtml(meta.short_label)} — ${escapeHtml(meta.group_title)}</option>`;
           })
           .join("");
+        syncStudioSingleSelects(activeSelect);
       }
     }
     renderWorkstationUserStatus();
@@ -1090,7 +1389,7 @@
       pathsEl.querySelectorAll("[data-copy-target-path]").forEach((btn) => {
         btn.addEventListener("click", () => {
           navigator.clipboard?.writeText(btn.dataset.copyTargetPath);
-          showToast(`Copied path: ${btn.dataset.copyTargetPath}`, "dark");
+          showToast(`Copied path: ${btn.dataset.copyTargetPath}`, "info");
         });
       });
     }
@@ -1136,6 +1435,7 @@
               `<option value="${escapeHtml(k)}" ${k === curOs ? "selected" : ""}>${escapeHtml(OS_LOCK_DISPLAY[k] || k)}</option>`
           )
           .join("");
+        syncStudioSingleSelects(osSelect);
       }
       if (permSumEl) {
         const rawPerm = (meta.permissions_summary && meta.permissions_summary[curOs]) || "";
@@ -2164,7 +2464,7 @@
       const serversHtml = (s.mcp_servers || [])
         .map(
           (srv, idx) => `
-          <div class="border rounded p-2 mb-2 bg-body-tertiary">
+          <div class="p-2 mb-2 studio-subcard">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
                 <input type="text" class="form-control form-control-sm mono-input fw-semibold" style="min-width: 155px; max-width: 220px; flex: 1 1 165px;" data-mcp-name="${idx}" value="${escapeHtml(srv.name)}" placeholder="server_name">
@@ -2313,7 +2613,7 @@
         <div class="section-block">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
             <div class="section-heading mb-0">${isPs ? "Windows PowerShell" : "Linux / macOS POSIX Bash"} Deterministic Guard</div>
-            <span class="badge text-bg-light border mono-input" style="font-size: 0.71rem;">${lineCount} lines · ${uniqueRules.length} policy rule(s)</span>
+            <span class="badge studio-badge-neutral mono-input" style="font-size: 0.71rem;">${lineCount} lines · ${uniqueRules.length} policy rule(s)</span>
           </div>
           <div class="section-desc">
             Edit the full guard script directly in the live code editor on the right. Changes round-trip into your single-file download and MDM <code>.zip</code> bundle.
@@ -2398,6 +2698,7 @@
 
     container.innerHTML = html;
     bindActiveFormEvents(container, fid);
+    syncStudioSingleSelects(container);
     if (focusSnap) {
       restoreFormFocus(container, focusSnap);
     }
@@ -3116,7 +3417,7 @@
         const fMeta = CATALOG_BY_ID[issue.file_id];
         const fileTag =
           showAll && fMeta
-            ? `<span class="badge text-bg-light border me-1">${escapeHtml(fMeta.filename)}</span>`
+            ? `<span class="badge studio-badge-neutral me-1">${escapeHtml(fMeta.filename)}</span>`
             : "";
         const lineTag = issue.line
           ? ` <span class="text-body-secondary">(line ${issue.line})</span>`
@@ -3266,6 +3567,9 @@
       applyTheme(current === "dark" ? "light" : "dark");
     });
 
+    // Upgrade all static/modal <select class="form-select"> elements to custom Studio dropdowns
+    syncStudioSingleSelects(document);
+
     // Guard #form-panel-container against mid-click DOM replacement between mousedown and mouseup
     const formPanelEl = document.getElementById("form-panel-container");
     const markFormPointerDown = () => {
@@ -3291,48 +3595,30 @@
     window.addEventListener("pointercancel", releaseFormPointerLatch, true);
     window.addEventListener("mouseup", releaseFormPointerLatch, true);
 
-    // Sync fixed-strategy Popper multi-select dropdown widths & viewport height
-    const syncMultiSelectMenuGeometry = (toggleBtn) => {
-      if (!toggleBtn) {
-        return;
-      }
-      const menu = toggleBtn.parentElement?.querySelector(".studio-multiselect-menu");
-      if (!menu) {
-        return;
-      }
-      const btnRect = toggleBtn.getBoundingClientRect();
-      menu.style.width = `${Math.max(Math.round(btnRect.width), 245)}px`;
-      const topbarHeight = document.querySelector(".studio-topbar")?.offsetHeight || 56;
-      const spaceBelow = window.innerHeight - btnRect.bottom - 16;
-      const spaceAbove = btnRect.top - topbarHeight - 12;
-      const bestSpace = Math.max(spaceBelow, spaceAbove, 220);
-      menu.style.maxHeight = `${Math.round(bestSpace)}px`;
-    };
-
+    // Sync fixed-strategy Popper multi-select & single-select dropdown widths & viewport height
     document.querySelectorAll(".studio-multiselect-btn").forEach((btn) => {
       btn.parentElement?.addEventListener("show.bs.dropdown", () => {
-        syncMultiSelectMenuGeometry(btn);
+        syncDropdownMenuGeometry(btn);
       });
       btn.parentElement?.addEventListener("shown.bs.dropdown", () => {
-        syncMultiSelectMenuGeometry(btn);
+        syncDropdownMenuGeometry(btn);
       });
     });
 
-    window.addEventListener("resize", () => {
-      document.querySelectorAll(".studio-multiselect-btn[aria-expanded='true']").forEach((btn) => {
-        syncMultiSelectMenuGeometry(btn);
-      });
-    });
-
-    document.querySelector(".left-scroll-area")?.addEventListener(
-      "scroll",
-      () => {
-        document.querySelectorAll(".studio-multiselect-btn[aria-expanded='true']").forEach((btn) => {
-          syncMultiSelectMenuGeometry(btn);
+    const syncOpenDropdowns = () => {
+      document
+        .querySelectorAll(
+          ".studio-multiselect-btn[aria-expanded='true'], .studio-singleselect-btn[aria-expanded='true']"
+        )
+        .forEach((btn) => {
+          syncDropdownMenuGeometry(btn);
         });
-      },
-      { passive: true }
-    );
+    };
+
+    window.addEventListener("resize", syncOpenDropdowns);
+    document
+      .querySelector(".left-scroll-area")
+      ?.addEventListener("scroll", syncOpenDropdowns, { passive: true });
 
     // Reset Scope button
     document.getElementById("btn-reset-scope")?.addEventListener("click", () => {
@@ -3354,7 +3640,7 @@
       AppStore.activeFileIds = [];
       AppStore.selectedFileId = "";
       renderAllPanels();
-      showToast("Reset OS, Surface, and File scope", "dark");
+      showToast("Reset OS, Surface, and File scope", "info");
     });
 
     // Step 1: Target OS Multi-Select Checkboxes & Select All / Clear
@@ -3736,6 +4022,7 @@
         const osSel = document.getElementById("select-ref-cli-os");
         if (osSel) {
           osSel.value = AppStore.refModalCliOs;
+          syncStudioSingleSelects(osSel);
         }
       }
       renderReferenceGuideModal();
