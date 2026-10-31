@@ -97,8 +97,11 @@
     selectedLockOs: "linux",
     refModalCliOs: "linux",
     refModalSection: "all",
+    refFilterQuery: "",
     activePermBucket: "allow",
     permFilterQuery: "",
+    domainFilterQuery: "",
+    mcpFilterQuery: "",
     showSecrets: false,
     lastDevUser: initialState.dev_user || "",
     syncSeq: 0,
@@ -248,6 +251,32 @@
           `<option value="${escapeHtml(opt.value)}" ${opt.value === cur ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
       )
       .join("");
+  }
+
+  /**
+   * Render a standardized search/filter input box with leading magnifying-glass icon
+   * and conditional `×` clear button.
+   *
+   * @summary Visually distinguishes read-only list search controls from record-creation inputs.
+   * @param {string} inputId - DOM `id` attribute for the `<input type="search">` element.
+   * @param {string} clearBtnId - DOM `id` attribute for the clear `<button>` element.
+   * @param {string} currentValue - Active search query string.
+   * @param {string} placeholder - Concise placeholder describing what list is filtered.
+   * @returns {string} HTML markup for `.studio-search-wrap`.
+   * @throws {never} Never throws.
+   */
+  function buildSearchBoxHtml(inputId, clearBtnId, currentValue, placeholder) {
+    const val = String(currentValue ?? "");
+    const hideClear = val ? "" : "d-none";
+    return `
+      <div class="studio-search-wrap">
+        <svg class="studio-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.75"></circle>
+          <line x1="10.5" y1="10.5" x2="14" y2="14"></line>
+        </svg>
+        <input type="search" id="${escapeHtml(inputId)}" class="form-control form-control-sm studio-search-input" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(val)}">
+        <button type="button" id="${escapeHtml(clearBtnId)}" class="studio-search-clear ${hideClear}" aria-label="Clear search" title="Clear search">&times;</button>
+      </div>`;
   }
 
   /**
@@ -936,6 +965,7 @@
   function renderReferenceGuideModal() {
     const secFilter = AppStore.refModalSection || "all";
     const cliOs = AppStore.refModalCliOs || "linux";
+    const q = String(AppStore.refFilterQuery ?? "").trim().toLowerCase();
     const rawUser = String(AppStore.state.dev_user ?? "").trim();
     const u = rawUser || UNSET_USER_TOKEN;
     const userCaptionVal = rawUser || "<unset>";
@@ -943,6 +973,11 @@
     const secOs = document.getElementById("ref-sec-os");
     const secVer = document.getElementById("ref-sec-versions");
     const secFiles = document.getElementById("ref-sec-files");
+    const cliOsWrap = document.getElementById("ref-cli-os-wrap");
+    const refSearchInput = document.getElementById("input-ref-search");
+    const refClearBtn = document.getElementById("btn-clear-ref-search");
+
+    const showTable3 = secFilter === "all" || secFilter === "files";
     if (secOs) {
       secOs.classList.toggle("d-none", secFilter !== "all" && secFilter !== "os");
     }
@@ -950,7 +985,16 @@
       secVer.classList.toggle("d-none", secFilter !== "all" && secFilter !== "versions");
     }
     if (secFiles) {
-      secFiles.classList.toggle("d-none", secFilter !== "all" && secFilter !== "files");
+      secFiles.classList.toggle("d-none", !showTable3);
+    }
+    if (cliOsWrap) {
+      cliOsWrap.classList.toggle("d-none", !showTable3);
+    }
+    if (refSearchInput && document.activeElement !== refSearchInput) {
+      refSearchInput.value = AppStore.refFilterQuery || "";
+    }
+    if (refClearBtn) {
+      refClearBtn.classList.toggle("d-none", !q);
     }
 
     const userCap = document.getElementById("ref-files-user-caption");
@@ -961,95 +1005,127 @@
     // Table 1: Minimum OS Requirements
     const tbodyOs = document.getElementById("tbody-ref-os");
     if (tbodyOs) {
-      tbodyOs.innerHTML = (REFERENCE_DATA.os_requirements || [])
-        .map(
-          (row) => `
-          <tr>
-            <td class="fw-semibold">${escapeHtml(row.os)}</td>
-            <td>${escapeHtml(row.min_version)}</td>
-            <td>${escapeHtml(row.architectures)}</td>
-            <td>${escapeHtml(row.hardware_runtime)}</td>
-            <td class="mono-input" style="font-size: 0.72rem;">${escapeHtml(row.sandbox_lock)}</td>
-          </tr>`
-        )
-        .join("");
+      const osRows = (REFERENCE_DATA.os_requirements || []).filter((row) => {
+        if (!q) {
+          return true;
+        }
+        const hay = `${row.os} ${row.min_version} ${row.architectures} ${row.hardware_runtime} ${row.sandbox_lock}`.toLowerCase();
+        return hay.includes(q);
+      });
+      tbodyOs.innerHTML = osRows.length
+        ? osRows
+            .map(
+              (row) => `
+              <tr>
+                <td class="fw-semibold">${escapeHtml(row.os)}</td>
+                <td>${escapeHtml(row.min_version)}</td>
+                <td>${escapeHtml(row.architectures)}</td>
+                <td>${escapeHtml(row.hardware_runtime)}</td>
+                <td class="mono-input" style="font-size: 0.72rem;">${escapeHtml(row.sandbox_lock)}</td>
+              </tr>`
+            )
+            .join("")
+        : `<tr><td colspan="5" class="text-body-secondary small py-2 text-center">No OS requirement rows match "${escapeHtml(AppStore.refFilterQuery)}".</td></tr>`;
     }
 
     // Table 2: Minimum Antigravity Versions
     const tbodyVer = document.getElementById("tbody-ref-versions");
     if (tbodyVer) {
-      tbodyVer.innerHTML = (REFERENCE_DATA.version_requirements || [])
-        .map(
-          (row) => `
-          <tr>
-            <td class="fw-semibold">${escapeHtml(row.surface)}</td>
-            <td><span class="badge studio-badge-neutral text-wrap text-start fw-semibold" style="font-size: 0.72rem;">${escapeHtml(row.min_version)}</span></td>
-            <td>${escapeHtml(row.platforms_protocols)}</td>
-            <td>${escapeHtml(row.notes)}</td>
-            <td>
-              <a href="${escapeHtml(row.doc_url)}" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-medium text-nowrap">
-                ${escapeHtml(row.doc_label || "Docs")} &#8599;
-              </a>
-            </td>
-          </tr>`
-        )
-        .join("");
+      const verRows = (REFERENCE_DATA.version_requirements || []).filter((row) => {
+        if (!q) {
+          return true;
+        }
+        const hay = `${row.surface} ${row.min_version} ${row.platforms_protocols} ${row.notes}`.toLowerCase();
+        return hay.includes(q);
+      });
+      tbodyVer.innerHTML = verRows.length
+        ? verRows
+            .map(
+              (row) => `
+              <tr>
+                <td class="fw-semibold">${escapeHtml(row.surface)}</td>
+                <td><span class="badge studio-badge-neutral text-wrap text-start fw-semibold" style="font-size: 0.72rem;">${escapeHtml(row.min_version)}</span></td>
+                <td>${escapeHtml(row.platforms_protocols)}</td>
+                <td>${escapeHtml(row.notes)}</td>
+                <td>
+                  <a href="${escapeHtml(row.doc_url)}" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-medium text-nowrap">
+                    ${escapeHtml(row.doc_label || "Docs")} &#8599;
+                  </a>
+                </td>
+              </tr>`
+            )
+            .join("")
+        : `<tr><td colspan="5" class="text-body-secondary small py-2 text-center">No surface version rows match "${escapeHtml(AppStore.refFilterQuery)}".</td></tr>`;
     }
 
     // Table 3: Canonical Files, Purpose, Is Mandatory, Admin CLI & Public Docs
     const tbodyFiles = document.getElementById("tbody-ref-files");
     if (tbodyFiles) {
-      tbodyFiles.innerHTML = CATALOG.map((item) => {
+      const fileItems = CATALOG.filter((item) => {
+        if (!q) {
+          return true;
+        }
         const rawPath = item.paths && item.paths[cliOs] ? item.paths[cliOs].replace(/\{user\}/g, u) : "";
-        const primaryPath = rawPath ? rawPath.split("  (")[0].trim() : "";
-        const cliBlock = AppStore.allFilesCli?.[item.id]?.[cliOs]?.lock || "";
-        const surfacesText = (item.surface_details || item.surfaces).join(", ");
-        const badgeVariant = item.mandatory_variant || "secondary";
-        const badgeClass =
-          badgeVariant === "secondary"
-            ? "studio-badge-neutral"
-            : badgeVariant === "primary"
-              ? "studio-badge-primary"
-              : `text-bg-${escapeHtml(badgeVariant)}`;
-        const badgeText = item.mandatory_status || "Optional";
+        const surfacesText = (item.surface_details || item.surfaces).join(" ");
+        const hay = `${item.short_label} ${item.filename} ${item.group_title} ${rawPath} ${surfacesText} ${item.summary} ${item.mandatory_status || ""} ${item.mandatory_note || ""}`.toLowerCase();
+        return hay.includes(q);
+      });
 
-        const pathHtml = rawPath
-          ? `<div class="mt-1 d-flex align-items-start justify-content-between gap-1">
-               <code class="text-break" style="font-size: 0.7rem;">${escapeHtml(rawPath)}</code>
-               <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 flex-shrink-0" style="font-size: 0.66rem; height: 20px;" data-ref-copy-path="${escapeHtml(primaryPath)}">Copy</button>
-             </div>`
-          : `<div class="mt-1"><span class="badge studio-badge-neutral">Not used on ${escapeHtml(OS_DISPLAY[cliOs] || cliOs)}</span></div>`;
+      tbodyFiles.innerHTML = fileItems.length
+        ? fileItems
+            .map((item) => {
+              const rawPath = item.paths && item.paths[cliOs] ? item.paths[cliOs].replace(/\{user\}/g, u) : "";
+              const primaryPath = rawPath ? rawPath.split("  (")[0].trim() : "";
+              const cliBlock = AppStore.allFilesCli?.[item.id]?.[cliOs]?.lock || "";
+              const surfacesText = (item.surface_details || item.surfaces).join(", ");
+              const badgeVariant = item.mandatory_variant || "secondary";
+              const badgeClass =
+                badgeVariant === "secondary"
+                  ? "studio-badge-neutral"
+                  : badgeVariant === "primary"
+                    ? "studio-badge-primary"
+                    : `text-bg-${escapeHtml(badgeVariant)}`;
+              const badgeText = item.mandatory_status || "Optional";
 
-        const cliHtml = cliBlock
-          ? `<div>
-               <div class="d-flex justify-content-between align-items-center mb-1">
-                 <span class="text-body-secondary" style="font-size: 0.69rem;">${escapeHtml(item.permissions_summary?.[cliOs]?.replace(/\{user\}/g, u) || "")}</span>
-                 <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 flex-shrink-0" style="font-size: 0.67rem; height: 20px;" data-ref-copy-cli="${escapeHtml(item.id)}">Copy CLI</button>
-               </div>
-               <pre class="ref-table-cli">${escapeHtml(cliBlock)}</pre>
-             </div>`
-          : `<span class="text-body-secondary small">N/A on ${escapeHtml(OS_DISPLAY[cliOs] || cliOs)}</span>`;
+              const pathHtml = rawPath
+                ? `<div class="mt-1 d-flex align-items-start justify-content-between gap-1">
+                     <code class="text-break" style="font-size: 0.7rem;">${escapeHtml(rawPath)}</code>
+                     <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 flex-shrink-0" style="font-size: 0.66rem; height: 20px;" data-ref-copy-path="${escapeHtml(primaryPath)}">Copy</button>
+                   </div>`
+                : `<div class="mt-1"><span class="badge studio-badge-neutral">Not used on ${escapeHtml(OS_DISPLAY[cliOs] || cliOs)}</span></div>`;
 
-        return `
-          <tr>
-            <td>
-              <div class="fw-semibold mono-input" style="font-size: 0.77rem;">${escapeHtml(item.short_label)}</div>
-              ${pathHtml}
-            </td>
-            <td style="font-size: 0.73rem;">${escapeHtml(surfacesText)}</td>
-            <td style="font-size: 0.74rem;">${escapeHtml(item.summary)}</td>
-            <td>
-              <span class="badge ${badgeClass} mb-1">${escapeHtml(badgeText)}</span>
-              <div class="text-body-secondary" style="font-size: 0.71rem; line-height: 1.3;">${escapeHtml(item.mandatory_note || "")}</div>
-            </td>
-            <td>${cliHtml}</td>
-            <td>
-              <a href="${escapeHtml(item.doc_url)}" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-medium" style="font-size: 0.74rem;">
-                Public Docs &#8599;
-              </a>
-            </td>
-          </tr>`;
-      }).join("");
+              const cliHtml = cliBlock
+                ? `<div>
+                     <div class="d-flex justify-content-between align-items-center mb-1">
+                       <span class="text-body-secondary" style="font-size: 0.69rem;">${escapeHtml(item.permissions_summary?.[cliOs]?.replace(/\{user\}/g, u) || "")}</span>
+                       <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 flex-shrink-0" style="font-size: 0.67rem; height: 20px;" data-ref-copy-cli="${escapeHtml(item.id)}">Copy CLI</button>
+                     </div>
+                     <pre class="ref-table-cli">${escapeHtml(cliBlock)}</pre>
+                   </div>`
+                : `<span class="text-body-secondary small">N/A on ${escapeHtml(OS_DISPLAY[cliOs] || cliOs)}</span>`;
+
+              return `
+                <tr>
+                  <td>
+                    <div class="fw-semibold mono-input" style="font-size: 0.77rem;">${escapeHtml(item.short_label)}</div>
+                    ${pathHtml}
+                  </td>
+                  <td style="font-size: 0.73rem;">${escapeHtml(surfacesText)}</td>
+                  <td style="font-size: 0.74rem;">${escapeHtml(item.summary)}</td>
+                  <td>
+                    <span class="badge ${badgeClass} mb-1">${escapeHtml(badgeText)}</span>
+                    <div class="text-body-secondary" style="font-size: 0.71rem; line-height: 1.3;">${escapeHtml(item.mandatory_note || "")}</div>
+                  </td>
+                  <td>${cliHtml}</td>
+                  <td>
+                    <a href="${escapeHtml(item.doc_url)}" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-medium" style="font-size: 0.74rem;">
+                      Public Docs &#8599;
+                    </a>
+                  </td>
+                </tr>`;
+            })
+            .join("")
+        : `<tr><td colspan="6" class="text-body-secondary small py-2 text-center">No configuration file rows match "${escapeHtml(AppStore.refFilterQuery)}".</td></tr>`;
 
       tbodyFiles.querySelectorAll("[data-ref-copy-path]").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -1780,7 +1856,8 @@
 
   /**
    * Render the Permission Rule Chip Builder (`allow` / `ask` / `deny`) HTML
-   * using clean `<select>` dropdowns instead of horizontal button clusters.
+   * with a 1-click segmented bucket switcher, dedicated rule composer box,
+   * and attached searchable rule list panel.
    *
    * @summary Shared component used by CLI `settings.json` and Desktop `config.json`.
    * @param {string} targetScope - Either `"cli"` or `"desktop"`.
@@ -1789,9 +1866,16 @@
    * @throws {never} Never throws.
    */
   function buildPermissionsWidgetHtml(targetScope, permsObj) {
-    const bucket = AppStore.activePermBucket;
+    const bucket = AppStore.activePermBucket || "allow";
+    const bucketMetaMap = {
+      allow: { title: "Allow Grants", short: "Allow" },
+      ask: { title: "Ask / Review", short: "Ask" },
+      deny: { title: "Deny / Block", short: "Deny" },
+    };
+    const bucketMeta = bucketMetaMap[bucket] || bucketMetaMap.allow;
     const allRules = Array.isArray(permsObj[bucket]) ? permsObj[bucket] : [];
-    const q = AppStore.permFilterQuery.trim().toLowerCase();
+    const rawQuery = String(AppStore.permFilterQuery ?? "").trim();
+    const q = rawQuery.toLowerCase();
     const filtered = q
       ? allRules.map((r, idx) => ({ r, idx })).filter((item) => item.r.toLowerCase().includes(q))
       : allRules.map((r, idx) => ({ r, idx }));
@@ -1804,83 +1888,117 @@
            </div>`
         : "";
 
+    const emptyRulesHtml = q
+      ? `<div class="text-body-secondary small p-2 d-flex align-items-center flex-wrap gap-2">
+           <span>No ${escapeHtml(bucketMeta.short.toLowerCase())} rules match "<strong>${escapeHtml(rawQuery)}</strong>".</span>
+           <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" id="btn-empty-clear-perm-search">Clear search</button>
+         </div>`
+      : `<div class="text-body-secondary small p-2">No ${escapeHtml(bucketMeta.short.toLowerCase())} rules configured yet. Add one above.</div>`;
+
     const chipsHtml = filtered.length
       ? filtered
           .map(
             (item) => `
           <span class="rule-chip">
             <span>${escapeHtml(item.r)}</span>
-            <button type="button" class="rule-chip-remove" data-remove-rule-idx="${item.idx}" title="Remove rule">&times;</button>
+            <button type="button" class="rule-chip-remove" data-remove-rule-idx="${item.idx}" aria-label="Remove rule" title="Remove rule">&times;</button>
           </span>`
           )
           .join("")
-      : `<div class="text-body-secondary small p-2">No ${escapeHtml(bucket)} rules match current filter.</div>`;
+      : emptyRulesHtml;
+
+    const listCountText = q
+      ? `Showing ${filtered.length} of ${allRules.length}`
+      : `${allRules.length} ${allRules.length === 1 ? "rule" : "rules"}`;
 
     const u = escapeHtml(String(AppStore.state.dev_user ?? "").trim() || UNSET_USER_TOKEN);
+    const allowCount = (permsObj.allow || []).length;
+    const askCount = (permsObj.ask || []).length;
+    const denyCount = (permsObj.deny || []).length;
 
     return `
       <div class="section-block" data-perm-scope="${escapeHtml(targetScope)}">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <div class="section-heading mb-0">Permission Grants (Allow / Ask / Deny)</div>
-          <span class="text-body-secondary" style="font-size:0.72rem;">Deny &gt; Ask &gt; Allow</span>
+          <span class="badge studio-badge-neutral" style="font-size:0.69rem;">Precedence: Deny &gt; Ask &gt; Allow</span>
         </div>
-        <div class="section-desc">Manage command, file, URL, and lazy MCP tool permissions via dropdown controls.</div>
+        <div class="section-desc">Switch permission buckets below, compose new grant rules, or search configured rules in place.</div>
         ${linkedNotice}
 
-        <div class="row g-2 mb-2">
-          <div class="col-sm-6">
-            <div class="studio-field-label-row">
-              <label class="form-label-sm" for="select-perm-bucket">Permission Bucket</label>
-            </div>
-            <select id="select-perm-bucket" class="form-select form-select-sm fw-medium">
-              <option value="allow" ${bucket === "allow" ? "selected" : ""}>Allow Grants (${(permsObj.allow || []).length})</option>
-              <option value="ask" ${bucket === "ask" ? "selected" : ""}>Ask / Review Grants (${(permsObj.ask || []).length})</option>
-              <option value="deny" ${bucket === "deny" ? "selected" : ""}>Deny / Block Grants (${(permsObj.deny || []).length})</option>
-            </select>
+        <!-- 1. Segmented Bucket Switcher -->
+        <div class="perm-bucket-tabs" role="tablist" aria-label="Permission Grant Buckets">
+          <button type="button" role="tab" aria-selected="${bucket === "allow"}" class="perm-bucket-tab ${bucket === "allow" ? "active" : ""}" data-bucket-tab="allow">
+            <span>Allow Grants</span>
+            <span class="perm-bucket-count">${allowCount}</span>
+          </button>
+          <button type="button" role="tab" aria-selected="${bucket === "ask"}" class="perm-bucket-tab ${bucket === "ask" ? "active" : ""}" data-bucket-tab="ask">
+            <span>Ask / Review</span>
+            <span class="perm-bucket-count">${askCount}</span>
+          </button>
+          <button type="button" role="tab" aria-selected="${bucket === "deny"}" class="perm-bucket-tab ${bucket === "deny" ? "active" : ""}" data-bucket-tab="deny">
+            <span>Deny / Block</span>
+            <span class="perm-bucket-count">${denyCount}</span>
+          </button>
+        </div>
+        <select id="select-perm-bucket" class="d-none" aria-hidden="true" tabindex="-1">
+          <option value="allow" ${bucket === "allow" ? "selected" : ""}>Allow Grants (${allowCount})</option>
+          <option value="ask" ${bucket === "ask" ? "selected" : ""}>Ask / Review Grants (${askCount})</option>
+          <option value="deny" ${bucket === "deny" ? "selected" : ""}>Deny / Block Grants (${denyCount})</option>
+        </select>
+
+        <!-- 2. Dedicated New-Rule Composer Box -->
+        <div class="studio-composer-box">
+          <div class="studio-composer-header">
+            <span class="studio-composer-title">+ Add New ${escapeHtml(bucketMeta.short)} Rule</span>
+            <span class="studio-composer-hint">Pick a syntax preset or type directly, then press Enter</span>
           </div>
-          <div class="col-sm-6">
-            <div class="studio-field-label-row">
-              <label class="form-label-sm" for="input-perm-search">Filter Current Bucket</label>
+          <div class="row g-2">
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="select-rule-template">Quick Syntax Preset (Optional)</label>
+              </div>
+              <select id="select-rule-template" class="form-select form-select-sm">
+                <option value="">Choose syntax preset...</option>
+                <option value="command(git status)">command(...) — Literal Command</option>
+                <option value="command(regex:^git\\s+(status|diff)$)">command(regex:...) — Regex Pattern</option>
+                <option value="read_file(/home/${u}/workspace)">read_file(/path) — Read Path</option>
+                <option value="write_file(/home/${u}/workspace)">write_file(/path) — Write Path</option>
+                <option value="read_url(docs.cloud.google.com)">read_url(domain) — URL Domain</option>
+                <option value="mcp(catalog/*)">mcp(server/tool) — Lazy MCP Tool</option>
+              </select>
             </div>
-            <input type="search" id="input-perm-search" class="form-control form-control-sm" placeholder="Filter rules..." value="${escapeHtml(AppStore.permFilterQuery)}">
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="input-new-perm-rule">Rule Expression to Add</label>
+              </div>
+              <div class="input-group input-group-sm">
+                <input type="text" id="input-new-perm-rule" class="form-control mono-input" placeholder="e.g. command(git status)">
+                <button type="button" id="btn-add-perm-rule" class="btn btn-primary fw-semibold px-2">+ Add Rule</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="row g-2 mb-2">
-          <div class="col-sm-6">
-            <div class="studio-field-label-row">
-              <label class="form-label-sm" for="select-rule-template">Syntax Template</label>
+        <!-- 3. Configured Rules List Panel with Attached Search Bar -->
+        <div class="studio-list-panel">
+          <div class="studio-list-toolbar">
+            <div class="studio-list-title">
+              <span>Configured ${escapeHtml(bucketMeta.title)}</span>
+              <span class="badge studio-badge-neutral">${escapeHtml(listCountText)}</span>
             </div>
-            <select id="select-rule-template" class="form-select form-select-sm">
-              <option value="">Insert template...</option>
-              <option value="command(git status)">command(...) — Literal</option>
-              <option value="command(regex:^git\\s+(status|diff)$)">command(regex:...) — Regex</option>
-              <option value="read_file(/home/${u}/workspace)">read_file(/path) — Read</option>
-              <option value="write_file(/home/${u}/workspace)">write_file(/path) — Write</option>
-              <option value="read_url(docs.cloud.google.com)">read_url(domain) — URL</option>
-              <option value="mcp(catalog/*)">mcp(server/tool) — MCP</option>
-            </select>
+            ${buildSearchBoxHtml("input-perm-search", "btn-clear-perm-search", AppStore.permFilterQuery, "Search configured rules...")}
           </div>
-          <div class="col-sm-6">
-            <div class="studio-field-label-row">
-              <label class="form-label-sm" for="input-new-perm-rule">New Rule Expression</label>
-            </div>
-            <div class="input-group input-group-sm">
-              <input type="text" id="input-new-perm-rule" class="form-control mono-input" placeholder="e.g. command(git status)">
-              <button type="button" id="btn-add-perm-rule" class="btn btn-outline-primary fw-semibold">Add</button>
-            </div>
-          </div>
+          <div class="rule-chip-list">${chipsHtml}</div>
         </div>
-
-        <div class="rule-chip-list">${chipsHtml}</div>
       </div>
     `;
   }
 
   /**
-   * Wire event listeners for the dropdown-driven Permission Rule Chip Builder.
+   * Wire event listeners for the segmented Permission Rule Chip Builder.
    *
-   * @summary Handles bucket dropdown, template dropdown, search, add, and remove.
+   * @summary Handles 1-click bucket tabs, syntax preset insertion with argument
+   *   highlighting, instant list search/clear, duplicate guard, and rule deletion.
    * @param {HTMLElement} container - Parent form container DOM element.
    * @param {string} targetScope - `"cli"` or `"desktop"`.
    * @returns {void} Returns nothing.
@@ -1904,9 +2022,22 @@
       }
     };
 
-    container.querySelector("#select-perm-bucket")?.addEventListener("change", (e) => {
-      AppStore.activePermBucket = e.target.value;
+    const switchBucket = (nextBucket) => {
+      if (!nextBucket || !["allow", "ask", "deny"].includes(nextBucket)) {
+        return;
+      }
+      AppStore.activePermBucket = nextBucket;
       renderActiveFormPanel(false);
+    };
+
+    container.querySelectorAll("[data-bucket-tab]").forEach((tabBtn) => {
+      tabBtn.addEventListener("click", () => {
+        switchBucket(tabBtn.dataset.bucketTab);
+      });
+    });
+
+    container.querySelector("#select-perm-bucket")?.addEventListener("change", (e) => {
+      switchBucket(e.target.value);
     });
 
     const searchInput = container.querySelector("#input-perm-search");
@@ -1916,6 +2047,14 @@
         renderActiveFormPanel(true);
       });
     }
+
+    const clearPermSearch = () => {
+      AppStore.permFilterQuery = "";
+      renderActiveFormPanel(false);
+      document.getElementById("input-perm-search")?.focus();
+    };
+    container.querySelector("#btn-clear-perm-search")?.addEventListener("click", clearPermSearch);
+    container.querySelector("#btn-empty-clear-perm-search")?.addEventListener("click", clearPermSearch);
 
     container.querySelector("#btn-inline-unlink")?.addEventListener("click", () => {
       AppStore.state.sync_permissions = false;
@@ -1928,10 +2067,22 @@
     const tplSelect = container.querySelector("#select-rule-template");
     if (tplSelect && newRuleInput) {
       tplSelect.addEventListener("change", () => {
-        if (tplSelect.value) {
-          newRuleInput.value = tplSelect.value;
-          tplSelect.value = "";
+        const chosen = tplSelect.value;
+        if (chosen) {
+          newRuleInput.value = chosen;
+          tplSelect.selectedIndex = 0;
+          refreshSingleSelectDisplay(tplSelect);
           newRuleInput.focus();
+          // Select the inner argument inside parentheses so the admin can immediately overtype it
+          const openParen = chosen.indexOf("(");
+          const closeParen = chosen.lastIndexOf(")");
+          if (openParen >= 0 && closeParen > openParen) {
+            try {
+              newRuleInput.setSelectionRange(openParen + 1, closeParen);
+            } catch {
+              // Ignore if selection range is unsupported
+            }
+          }
         }
       });
     }
@@ -1942,12 +2093,21 @@
       }
       const val = newRuleInput.value.trim();
       if (!val) {
+        newRuleInput.focus();
         return;
       }
       const perms = getTargetPerms();
       const arr = perms[AppStore.activePermBucket];
-      if (!arr.includes(val)) {
-        arr.unshift(val);
+      if (arr.includes(val)) {
+        showToast("Rule already exists in this permission bucket", "warning");
+        newRuleInput.select();
+        return;
+      }
+      arr.unshift(val);
+      const activeQuery = AppStore.permFilterQuery.trim().toLowerCase();
+      if (activeQuery && !val.toLowerCase().includes(activeQuery)) {
+        AppStore.permFilterQuery = "";
+        showToast("Added rule (cleared search filter so it is visible)", "info");
       }
       syncMirrorIfLinked();
       newRuleInput.value = "";
@@ -2027,11 +2187,19 @@
 
     if (fid === "admin_settings") {
       const gw = s.gateway;
-      const headersRows = (gw.customHeaders || [])
+      const customHeaders = gw.customHeaders || [];
+      const headerColHead = customHeaders.length
+        ? `<div class="row g-2 align-items-center studio-col-header">
+             <div class="col-6">Header Name (Key)</div>
+             <div class="col">Header Value</div>
+             <div class="col-auto" style="width: 30px;"></div>
+           </div>`
+        : "";
+      const headersRows = customHeaders
         .map(
           (h, idx) => `
           <div class="row g-2 align-items-center mb-1">
-            <div class="col-5">
+            <div class="col-6">
               <input type="text" class="form-control form-control-sm mono-input" data-gw-hdr-key="${idx}" value="${escapeHtml(h.key)}" placeholder="X-Cost-Center">
             </div>
             <div class="col">
@@ -2044,7 +2212,15 @@
         )
         .join("");
 
-      const modelRows = (gw.models || [])
+      const catalogModels = gw.models || [];
+      const modelColHead = catalogModels.length
+        ? `<div class="row g-2 align-items-center studio-col-header">
+             <div class="col-6">Model ID (models.list)</div>
+             <div class="col">Display Name (Optional)</div>
+             <div class="col-auto" style="width: 30px;"></div>
+           </div>`
+        : "";
+      const modelRows = catalogModels
         .map(
           (m, idx) => `
           <div class="row g-2 align-items-center mb-1">
@@ -2123,19 +2299,26 @@
         <div class="section-block">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div>
-              <div class="section-heading mb-0">FinOps &amp; Attribution Headers</div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="section-heading mb-0">FinOps &amp; Attribution Headers</span>
+                <span class="badge studio-badge-neutral">${customHeaders.length}</span>
+              </div>
               <div class="section-desc mb-0">Pinned in Tier-1 MDM so developers cannot spoof chargeback headers.</div>
             </div>
             <button type="button" id="btn-add-gw-header" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.75rem;">+ Add Header</button>
           </div>
-          ${headersRows || '<div class="text-body-secondary small">No custom headers configured.</div>'}
+          ${headerColHead}
+          ${headersRows || '<div class="text-body-secondary small">No custom headers configured. Click "+ Add Header" above.</div>'}
           <div id="gw-hdr-key-feedback" class="text-danger small mt-1 d-none"></div>
         </div>
 
         <div class="section-block">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div>
-              <div class="section-heading mb-0">Approved Model Catalog</div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="section-heading mb-0">Approved Model Catalog</span>
+                <span class="badge studio-badge-neutral">${catalogModels.length}</span>
+              </div>
               <div class="section-desc mb-0">Top-level GA <code>models.defaultModelId</code> and <code>models.list</code>.</div>
             </div>
             <button type="button" id="btn-add-gw-model" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.75rem;">+ Add Model</button>
@@ -2143,12 +2326,13 @@
           <div class="row g-2 mb-2">
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="gw-default-model">Default Model ID</label>
+                <label class="form-label-sm" for="gw-default-model">Default Model ID (models.defaultModelId)</label>
               </div>
               <input id="gw-default-model" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.defaultModelId)}">
             </div>
           </div>
-          ${modelRows || '<div class="text-body-secondary small">No models listed in catalog.</div>'}
+          ${modelColHead}
+          ${modelRows || '<div class="text-body-secondary small">No models listed in catalog. Click "+ Add Model" above.</div>'}
           <div id="gw-mdl-id-feedback" class="text-danger small mt-1 d-none"></div>
         </div>
       `;
@@ -2251,60 +2435,60 @@
         <div class="section-block">
           <div class="section-heading">CLI &amp; VS Code Execution Sandbox</div>
           <div class="section-desc">Enforced by <code>agy</code> CLI, VS Code, and Visual Studio extensions.</div>
-          <div class="row g-2 mb-2">
+          <div class="row g-2 mb-1">
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="cli-agent-mode">agentMode</label>
+                <label class="form-label-sm" for="cli-agent-mode">Agent Mode (<code>agentMode</code>)</label>
               </div>
               <select id="cli-agent-mode" class="form-select form-select-sm">${agentModeOpts}</select>
             </div>
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="cli-tool-perm">toolPermission</label>
+                <label class="form-label-sm" for="cli-tool-perm">Tool Permission (<code>toolPermission</code>)</label>
               </div>
               <select id="cli-tool-perm" class="form-select form-select-sm">${toolPermOpts}</select>
             </div>
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="cli-artifact-review">artifactReviewPolicy</label>
+                <label class="form-label-sm" for="cli-artifact-review">Artifact Review (<code>artifactReviewPolicy</code>)</label>
               </div>
               <select id="cli-artifact-review" class="form-select form-select-sm">${artifactOpts}</select>
             </div>
             <div class="col-sm-6 ${showHistoryInput ? "" : "d-none"}" id="cli-optional-row">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="cli-history-size">historySize (0 = Ephemeral)</label>
+                <label class="form-label-sm" for="cli-history-size">History Size (<code>historySize</code>, 0 = Ephemeral)</label>
               </div>
               <input id="cli-history-size" type="number" min="0" max="500" class="form-control form-control-sm" value="${escapeHtml(c.historySize)}">
             </div>
           </div>
 
-          <div class="d-flex flex-wrap gap-3 mt-2">
-            <div class="form-check form-switch">
+          <div class="studio-toggle-strip">
+            <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="cli-enable-sandbox" ${c.enableTerminalSandbox ? "checked" : ""}>
-              <label class="form-check-label small" for="cli-enable-sandbox">enableTerminalSandbox</label>
+              <label class="form-check-label small" for="cli-enable-sandbox">Terminal Sandbox (<code>enableTerminalSandbox</code>)</label>
             </div>
-            <div class="form-check form-switch">
+            <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="cli-non-ws" ${c.allowNonWorkspaceAccess ? "checked" : ""}>
-              <label class="form-check-label small" for="cli-non-ws">allowNonWorkspaceAccess</label>
+              <label class="form-check-label small" for="cli-non-ws">Outside-Workspace Files (<code>allowNonWorkspaceAccess</code>)</label>
             </div>
-            <div class="form-check form-switch">
+            <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="cli-opt-ui" ${c.includeOptionalUiKeys ? "checked" : ""}>
-              <label class="form-check-label small" for="cli-opt-ui">Include historySize &amp; UI suppression</label>
+              <label class="form-check-label small" for="cli-opt-ui">Configure <code>historySize</code> &amp; UI Toggles</label>
             </div>
           </div>
 
-          <div class="d-flex flex-wrap gap-3 mt-2 pt-2 border-top ${c.includeOptionalUiKeys ? "" : "d-none"}">
-            <div class="form-check form-switch">
+          <div class="studio-toggle-strip ${c.includeOptionalUiKeys ? "" : "d-none"}">
+            <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="cli-ui-notif" ${c.notifications ? "checked" : ""}>
-              <label class="form-check-label small" for="cli-ui-notif">notifications</label>
+              <label class="form-check-label small" for="cli-ui-notif">Notifications (<code>notifications</code>)</label>
             </div>
-            <div class="form-check form-switch">
+            <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="cli-ui-survey" ${c.showFeedbackSurvey ? "checked" : ""}>
-              <label class="form-check-label small" for="cli-ui-survey">showFeedbackSurvey</label>
+              <label class="form-check-label small" for="cli-ui-survey">Feedback Survey (<code>showFeedbackSurvey</code>)</label>
             </div>
-            <div class="form-check form-switch">
+            <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="cli-ui-tips" ${c.showTips ? "checked" : ""}>
-              <label class="form-check-label small" for="cli-ui-tips">showTips</label>
+              <label class="form-check-label small" for="cli-ui-tips">Startup Tips (<code>showTips</code>)</label>
             </div>
           </div>
         </div>
@@ -2388,13 +2572,13 @@
           <div class="row g-2 mb-2">
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="desk-auto-exec">autoExecutionPolicy</label>
+                <label class="form-label-sm" for="desk-auto-exec">Auto-Execution (<code>autoExecutionPolicy</code>)</label>
               </div>
               <select id="desk-auto-exec" class="form-select form-select-sm">${autoExecOpts}</select>
             </div>
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="desk-artifact">artifactReviewMode</label>
+                <label class="form-label-sm" for="desk-artifact">Artifact Review (<code>artifactReviewMode</code>)</label>
               </div>
               <select id="desk-artifact" class="form-select form-select-sm">${deskArtOpts}</select>
             </div>
@@ -2403,34 +2587,35 @@
           <div class="row g-2 mb-2">
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="desk-browser-js">browserJsExecutionPolicy</label>
+                <label class="form-label-sm" for="desk-browser-js">Browser JS Policy (<code>browserJsExecutionPolicy</code>)</label>
               </div>
               <select id="desk-browser-js" class="form-select form-select-sm">${browserJsOpts}</select>
             </div>
-            <div class="col-sm-6 d-flex align-items-end gap-3 pb-1">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="desk-sandbox" ${d.enableTerminalSandbox ? "checked" : ""}>
-                <label class="form-check-label small" for="desk-sandbox">enableTerminalSandbox</label>
+            <div class="col-sm-6">
+              <div class="studio-field-label-row">
+                <label class="form-label-sm" for="desk-nonws-policy">Outside-Workspace Files (<code>nonWorkspaceFileAccessPolicy</code>)</label>
               </div>
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="desk-net" ${d.sandboxAllowNetwork ? "checked" : ""}>
-                <label class="form-check-label small" for="desk-net">sandboxAllowNetwork</label>
-              </div>
+              <select id="desk-nonws-policy" class="form-select form-select-sm">${nonWsOpts}</select>
             </div>
           </div>
 
           <div class="row g-2">
             <div class="col-sm-6">
               <div class="studio-field-label-row">
-                <label class="form-label-sm" for="desk-nonws-policy">nonWorkspaceFileAccessPolicy</label>
-              </div>
-              <select id="desk-nonws-policy" class="form-select form-select-sm">${nonWsOpts}</select>
-            </div>
-            <div class="col-sm-6">
-              <div class="studio-field-label-row">
-                <label class="form-label-sm" for="desk-internet-policy">internetAccessPolicy</label>
+                <label class="form-label-sm" for="desk-internet-policy">Internet Access Policy (<code>internetAccessPolicy</code>)</label>
               </div>
               <select id="desk-internet-policy" class="form-select form-select-sm">${internetOpts}</select>
+            </div>
+          </div>
+
+          <div class="studio-toggle-strip">
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="desk-sandbox" ${d.enableTerminalSandbox ? "checked" : ""}>
+              <label class="form-check-label small" for="desk-sandbox">Terminal Sandbox (<code>enableTerminalSandbox</code>)</label>
+            </div>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="desk-net" ${d.sandboxAllowNetwork ? "checked" : ""}>
+              <label class="form-check-label small" for="desk-net">Sandbox Network Access (<code>sandboxAllowNetwork</code>)</label>
             </div>
           </div>
         </div>
@@ -2439,95 +2624,164 @@
       `;
     } else if (fid === "browser_allowlist") {
       const domains = s.browser_domains || [];
-      const chips = domains
-        .map(
-          (dom, idx) => `
-          <span class="rule-chip">
-            <span>${escapeHtml(dom)}</span>
-            <button type="button" class="rule-chip-remove" data-del-domain="${idx}" aria-label="Remove domain" title="Remove domain">&times;</button>
-          </span>`
-        )
-        .join("");
+      const rawDomQuery = String(AppStore.domainFilterQuery ?? "").trim();
+      const domQ = rawDomQuery.toLowerCase();
+      const filteredDomains = domQ
+        ? domains.map((dom, idx) => ({ dom, idx })).filter((item) => item.dom.toLowerCase().includes(domQ))
+        : domains.map((dom, idx) => ({ dom, idx }));
+
+      const emptyDomHtml = domQ
+        ? `<div class="text-body-secondary small p-2 d-flex align-items-center flex-wrap gap-2">
+             <span>No hostnames match "<strong>${escapeHtml(rawDomQuery)}</strong>".</span>
+             <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" id="btn-empty-clear-domain-search">Clear search</button>
+           </div>`
+        : '<div class="text-body-secondary small p-2">No hostnames configured yet. Add a trusted hostname above.</div>';
+
+      const chips = filteredDomains.length
+        ? filteredDomains
+            .map(
+              (item) => `
+              <span class="rule-chip">
+                <span>${escapeHtml(item.dom)}</span>
+                <button type="button" class="rule-chip-remove" data-del-domain="${item.idx}" aria-label="Remove domain" title="Remove domain">&times;</button>
+              </span>`
+            )
+            .join("")
+        : emptyDomHtml;
+
+      const domCountText = domQ
+        ? `Showing ${filteredDomains.length} of ${domains.length}`
+        : `${domains.length} ${domains.length === 1 ? "hostname" : "hostnames"}`;
 
       html += `
         <div class="section-block">
           <div class="section-heading">Trusted Browser Subagent Hostnames</div>
           <div class="section-desc">Enter bare hostnames (no <code>https://</code> scheme or path). Lock the file using the commands above so developers cannot click "Always allow".</div>
-          <div class="input-group input-group-sm mb-2">
-            <input id="input-new-domain" type="text" class="form-control mono-input" placeholder="docs.internal.example.com">
-            <button id="btn-add-domain" type="button" class="btn btn-outline-primary fw-semibold">Add Domain</button>
+
+          <div class="studio-composer-box">
+            <div class="studio-composer-header">
+              <span class="studio-composer-title">+ Add Trusted Hostname</span>
+              <span class="studio-composer-hint">Bare domain or wildcard (e.g. *.corp.example.com)</span>
+            </div>
+            <div class="input-group input-group-sm">
+              <input id="input-new-domain" type="text" class="form-control mono-input" placeholder="docs.internal.example.com">
+              <button id="btn-add-domain" type="button" class="btn btn-primary fw-semibold px-2">+ Add Hostname</button>
+            </div>
           </div>
-          <div class="rule-chip-list">${chips || '<div class="text-body-secondary small">No domains listed.</div>'}</div>
+
+          <div class="studio-list-panel">
+            <div class="studio-list-toolbar">
+              <div class="studio-list-title">
+                <span>Configured Hostnames</span>
+                <span class="badge studio-badge-neutral">${escapeHtml(domCountText)}</span>
+              </div>
+              ${buildSearchBoxHtml("input-domain-search", "btn-clear-domain-search", AppStore.domainFilterQuery, "Search hostnames...")}
+            </div>
+            <div class="rule-chip-list">${chips}</div>
+          </div>
         </div>
       `;
     } else if (fid === "mcp_config") {
-      const serversHtml = (s.mcp_servers || [])
-        .map(
-          (srv, idx) => `
-          <div class="p-2 mb-2 studio-subcard">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
-                <input type="text" class="form-control form-control-sm mono-input fw-semibold" style="min-width: 155px; max-width: 220px; flex: 1 1 165px;" data-mcp-name="${idx}" value="${escapeHtml(srv.name)}" placeholder="server_name">
-                <select class="form-select form-select-sm" style="width: 150px; flex: 0 0 auto;" data-mcp-transport="${idx}">
-                  <option value="stdio" ${srv.transport === "stdio" ? "selected" : ""}>Local stdio</option>
-                  <option value="http" ${srv.transport === "http" ? "selected" : ""}>Remote HTTP</option>
-                </select>
-              </div>
-              <div class="d-flex align-items-center gap-2">
-                <div class="form-check form-switch mb-0">
-                  <input class="form-check-input" type="checkbox" data-mcp-enabled="${idx}" ${!srv.disabled ? "checked" : ""}>
-                  <label class="form-check-label small">${!srv.disabled ? "Enabled" : "Disabled"}</label>
+      const allServers = s.mcp_servers || [];
+      const rawMcpQuery = String(AppStore.mcpFilterQuery ?? "").trim();
+      const mcpQ = rawMcpQuery.toLowerCase();
+      const indexedServers = allServers.map((srv, idx) => ({ srv, idx }));
+      const filteredServers = mcpQ
+        ? indexedServers.filter(({ srv }) => {
+            const hay = `${srv.name || ""} ${srv.transport || ""} ${srv.serverUrl || ""} ${srv.command || ""} ${(srv.enabledTools || []).join(" ")} ${(srv.disabledTools || []).join(" ")}`.toLowerCase();
+            return hay.includes(mcpQ);
+          })
+        : indexedServers;
+
+      const mcpCountText = mcpQ
+        ? `Showing ${filteredServers.length} of ${allServers.length}`
+        : `${allServers.length}`;
+
+      const showMcpSearch = allServers.length > 1 || Boolean(mcpQ);
+      const mcpSearchToolbar = showMcpSearch
+        ? `<div class="d-flex justify-content-end mb-2">
+             ${buildSearchBoxHtml("input-mcp-search", "btn-clear-mcp-search", AppStore.mcpFilterQuery, "Search MCP servers...")}
+           </div>`
+        : "";
+
+      const serversHtml = filteredServers.length
+        ? filteredServers
+            .map(
+              ({ srv, idx }) => `
+              <div class="p-2 mb-2 studio-subcard">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                  <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
+                    <input type="text" class="form-control form-control-sm mono-input fw-semibold" style="min-width: 155px; max-width: 220px; flex: 1 1 165px;" data-mcp-name="${idx}" value="${escapeHtml(srv.name)}" placeholder="server_name">
+                    <select class="form-select form-select-sm" style="width: 150px; flex: 0 0 auto;" data-mcp-transport="${idx}">
+                      <option value="stdio" ${srv.transport === "stdio" ? "selected" : ""}>Local stdio</option>
+                      <option value="http" ${srv.transport === "http" ? "selected" : ""}>Remote HTTP</option>
+                    </select>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" data-mcp-enabled="${idx}" ${!srv.disabled ? "checked" : ""}>
+                      <label class="form-check-label small">${!srv.disabled ? "Enabled" : "Disabled"}</label>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-row-delete" data-mcp-del="${idx}" aria-label="Remove MCP server" title="Remove MCP server">&times;</button>
+                  </div>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-danger btn-row-delete" data-mcp-del="${idx}" aria-label="Remove MCP server" title="Remove MCP server">&times;</button>
-              </div>
-            </div>
 
-            ${
-              srv.transport === "http"
-                ? `<div class="mb-2">
-                     <div class="studio-field-label-row"><label class="form-label-sm">serverUrl</label></div>
-                     <input type="text" class="form-control form-control-sm mono-input" data-mcp-url="${idx}" value="${escapeHtml(srv.serverUrl)}" placeholder="https://mcp.internal.example.com/mcp/">
-                   </div>`
-                : `<div class="row g-2 mb-2">
-                     <div class="col-sm-6">
-                       <div class="studio-field-label-row"><label class="form-label-sm">command</label></div>
-                       <input type="text" class="form-control form-control-sm mono-input" data-mcp-cmd="${idx}" value="${escapeHtml(srv.command)}" placeholder="/usr/local/bin/mcp_server">
-                     </div>
-                     <div class="col-sm-6">
-                       <div class="studio-field-label-row"><label class="form-label-sm">args (comma-separated)</label></div>
-                       <input type="text" class="form-control form-control-sm mono-input" data-mcp-args="${idx}" value="${escapeHtml((srv.args || []).join(", "))}">
-                     </div>
-                   </div>`
-            }
+                ${
+                  srv.transport === "http"
+                    ? `<div class="mb-2">
+                         <div class="studio-field-label-row"><label class="form-label-sm">Remote Endpoint URL (<code>serverUrl</code>)</label></div>
+                         <input type="text" class="form-control form-control-sm mono-input" data-mcp-url="${idx}" value="${escapeHtml(srv.serverUrl)}" placeholder="https://mcp.internal.example.com/mcp/">
+                       </div>`
+                    : `<div class="row g-2 mb-2">
+                         <div class="col-sm-6">
+                           <div class="studio-field-label-row"><label class="form-label-sm">Executable (<code>command</code>)</label></div>
+                           <input type="text" class="form-control form-control-sm mono-input" data-mcp-cmd="${idx}" value="${escapeHtml(srv.command)}" placeholder="/usr/local/bin/mcp_server">
+                         </div>
+                         <div class="col-sm-6">
+                           <div class="studio-field-label-row"><label class="form-label-sm">Arguments (<code>args</code>, comma-sep)</label></div>
+                           <input type="text" class="form-control form-control-sm mono-input" data-mcp-args="${idx}" value="${escapeHtml((srv.args || []).join(", "))}">
+                         </div>
+                       </div>`
+                }
 
-            <div class="row g-2">
-              <div class="col-sm-4">
-                <div class="studio-field-label-row"><label class="form-label-sm">timeoutSeconds</label></div>
-                <input type="number" min="1" max="3600" class="form-control form-control-sm mono-input" data-mcp-timeout="${idx}" value="${escapeHtml(srv.timeoutSeconds ?? "")}" placeholder="Omit">
-              </div>
-              <div class="col-sm-4">
-                <div class="studio-field-label-row"><label class="form-label-sm">enabledTools</label></div>
-                <input type="text" class="form-control form-control-sm mono-input" data-mcp-allow="${idx}" value="${escapeHtml((srv.enabledTools || []).join(", "))}">
-              </div>
-              <div class="col-sm-4">
-                <div class="studio-field-label-row"><label class="form-label-sm">disabledTools</label></div>
-                <input type="text" class="form-control form-control-sm mono-input" data-mcp-deny="${idx}" value="${escapeHtml((srv.disabledTools || []).join(", "))}">
-              </div>
-            </div>
-          </div>`
-        )
-        .join("");
+                <div class="row g-2">
+                  <div class="col-sm-4">
+                    <div class="studio-field-label-row"><label class="form-label-sm">Timeout (s)</label></div>
+                    <input type="number" min="1" max="3600" class="form-control form-control-sm mono-input" data-mcp-timeout="${idx}" value="${escapeHtml(srv.timeoutSeconds ?? "")}" placeholder="Omit">
+                  </div>
+                  <div class="col-sm-4">
+                    <div class="studio-field-label-row"><label class="form-label-sm">Allowed Tools (<code>enabledTools</code>)</label></div>
+                    <input type="text" class="form-control form-control-sm mono-input" data-mcp-allow="${idx}" value="${escapeHtml((srv.enabledTools || []).join(", "))}">
+                  </div>
+                  <div class="col-sm-4">
+                    <div class="studio-field-label-row"><label class="form-label-sm">Blocked Tools (<code>disabledTools</code>)</label></div>
+                    <input type="text" class="form-control form-control-sm mono-input" data-mcp-deny="${idx}" value="${escapeHtml((srv.disabledTools || []).join(", "))}">
+                  </div>
+                </div>
+              </div>`
+            )
+            .join("")
+        : mcpQ
+          ? `<div class="text-body-secondary small p-2 d-flex align-items-center flex-wrap gap-2">
+               <span>No MCP servers match "<strong>${escapeHtml(rawMcpQuery)}</strong>".</span>
+               <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" id="btn-empty-clear-mcp-search">Clear search</button>
+             </div>`
+          : '<div class="text-body-secondary small">No MCP servers configured. Click "+ Add Server" above.</div>';
 
       html += `
         <div class="section-block">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div>
-              <div class="section-heading mb-0">MCP Server Definitions</div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="section-heading mb-0">MCP Server Definitions</span>
+                <span class="badge studio-badge-neutral">${escapeHtml(mcpCountText)}</span>
+              </div>
               <div class="section-desc mb-0">Keep lazy loading (default) so <code>permissions.deny</code> <code>mcp(...)</code> rules apply inside <code>call_mcp_tool</code>.</div>
             </div>
             <button type="button" id="btn-add-mcp" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.75rem;">+ Add Server</button>
           </div>
-          ${serversHtml || '<div class="text-body-secondary small">No MCP servers configured.</div>'}
+          ${mcpSearchToolbar}
+          ${serversHtml}
           <div id="mcp-name-feedback" class="text-danger small mt-1 d-none"></div>
         </div>
       `;
@@ -2597,7 +2851,7 @@
             </div>
           </div>
           <div class="${h.enableSessionStartBanner ? "" : "d-none"}">
-            <label class="form-label-sm" for="hook-banner-txt">Compliance Banner Text</label>
+            <div class="studio-field-label-row"><label class="form-label-sm" for="hook-banner-txt">Compliance Banner Text</label></div>
             <input id="hook-banner-txt" type="text" class="form-control form-control-sm" value="${escapeHtml(h.sessionBannerText)}">
           </div>
         </div>
@@ -3025,15 +3279,39 @@
       });
       bindPermissionsWidgetEvents(container, "desktop");
     } else if (fid === "browser_allowlist") {
+      const domSearchInput = container.querySelector("#input-domain-search");
+      if (domSearchInput) {
+        domSearchInput.addEventListener("input", () => {
+          AppStore.domainFilterQuery = domSearchInput.value;
+          renderActiveFormPanel(true);
+        });
+      }
+      const clearDomainSearch = () => {
+        AppStore.domainFilterQuery = "";
+        renderActiveFormPanel(false);
+        document.getElementById("input-domain-search")?.focus();
+      };
+      container.querySelector("#btn-clear-domain-search")?.addEventListener("click", clearDomainSearch);
+      container.querySelector("#btn-empty-clear-domain-search")?.addEventListener("click", clearDomainSearch);
+
       const addDom = () => {
         const inp = container.querySelector("#input-new-domain");
         const val = (inp?.value || "").trim();
         if (!val) {
+          inp?.focus();
           return;
         }
         const domains = getState().browser_domains;
-        if (!domains.includes(val)) {
-          domains.push(val);
+        if (domains.includes(val)) {
+          showToast("Hostname is already in the allowlist", "warning");
+          inp?.select();
+          return;
+        }
+        domains.push(val);
+        const activeQuery = AppStore.domainFilterQuery.trim().toLowerCase();
+        if (activeQuery && !val.toLowerCase().includes(activeQuery)) {
+          AppStore.domainFilterQuery = "";
+          showToast("Added hostname (cleared search filter so it is visible)", "info");
         }
         inp.value = "";
         renderActiveFormPanel(false);
@@ -3060,6 +3338,21 @@
         });
       });
     } else if (fid === "mcp_config") {
+      const mcpSearchInput = container.querySelector("#input-mcp-search");
+      if (mcpSearchInput) {
+        mcpSearchInput.addEventListener("input", () => {
+          AppStore.mcpFilterQuery = mcpSearchInput.value;
+          renderActiveFormPanel(true);
+        });
+      }
+      const clearMcpSearch = () => {
+        AppStore.mcpFilterQuery = "";
+        renderActiveFormPanel(false);
+        document.getElementById("input-mcp-search")?.focus();
+      };
+      container.querySelector("#btn-clear-mcp-search")?.addEventListener("click", clearMcpSearch);
+      container.querySelector("#btn-empty-clear-mcp-search")?.addEventListener("click", clearMcpSearch);
+
       const updateMcpNameFeedback = () =>
         refreshUniqueKeyFeedback(
           container,
@@ -3073,7 +3366,7 @@
       container.querySelector("#btn-add-mcp")?.addEventListener("click", () => {
         const servers = getState().mcp_servers;
         const uniqueServerName = nextUniqueIdentifier(
-          servers.map((s) => s.name),
+          servers.map((srv) => srv.name),
           "",
           "corp_server_"
         );
@@ -3089,6 +3382,9 @@
           disabledTools: [],
           env: {},
         });
+        if (AppStore.mcpFilterQuery.trim()) {
+          AppStore.mcpFilterQuery = "";
+        }
         renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
@@ -3301,9 +3597,36 @@
   }
 
   /**
+   * Switch the active editor and form pane to a specific policy file ID.
+   *
+   * @summary Used by clickable `.studio-jump-pill` badges inside the Validation Drawer
+   *   so admins can jump straight to any file reporting an error or warning.
+   * @param {string} targetFid - Target `file_id` from `CATALOG_BY_ID`.
+   * @returns {Promise<void>} Resolves once pending sync is flushed and panels update.
+   * @throws {never} Never throws.
+   */
+  async function jumpToPolicyFile(targetFid) {
+    if (!targetFid || !CATALOG_BY_ID[targetFid] || !AppStore.activeFileIds.includes(targetFid)) {
+      return;
+    }
+    await flushPendingSync();
+    AppStore.selectedFileId = targetFid;
+    const activeSelect = document.getElementById("active-file-selector");
+    if (activeSelect) {
+      activeSelect.value = targetFid;
+      syncStudioSingleSelects(activeSelect);
+    }
+    renderFileReferenceCard(true);
+    renderActiveFormPanel(false);
+    renderEditorPane();
+    renderValidationDrawer();
+  }
+
+  /**
    * Update ONLY the right-pane header without resetting cursor focus in `#code-editor`.
    *
-   * @summary Updates active filename, validation badge, and Auto-Fix All button.
+   * @summary Updates active filename, per-file status pill (`#active-file-status-pill`),
+   *   bundle validation badge (`#global-validation-badge`), and Auto-Fix All button.
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
@@ -3315,19 +3638,43 @@
       titleEl.textContent = meta.filename;
     }
 
+    const activePill = document.getElementById("active-file-status-pill");
     const badge = document.getElementById("global-validation-badge");
     const fixAllBtn = document.getElementById("btn-fix-all");
     const v = AppStore.validation;
+    const multiFileBundle = (AppStore.activeFileIds || []).length > 1;
+
+    if (activePill) {
+      if (multiFileBundle && fid && v) {
+        const fileIssues = (v.issues_by_file && v.issues_by_file[fid]) || [];
+        const fErr = fileIssues.filter((i) => i.severity === "ERROR").length;
+        const fWarn = fileIssues.filter((i) => i.severity === "WARN").length;
+        if (fErr > 0) {
+          activePill.className = "badge rounded-pill status-badge-error px-2 py-1";
+          activePill.textContent = `This File: ${fErr} Error(s)`;
+        } else if (fWarn > 0) {
+          activePill.className = "badge rounded-pill status-badge-warn px-2 py-1";
+          activePill.textContent = `This File: ${fWarn} Warn`;
+        } else {
+          activePill.className = "badge rounded-pill status-badge-pass px-2 py-1";
+          activePill.textContent = "This File: PASS";
+        }
+      } else {
+        activePill.className = "badge rounded-pill px-2 py-1 d-none";
+      }
+    }
+
     if (badge && v) {
+      const prefix = multiFileBundle ? "Bundle · " : "";
       if (v.error_count > 0) {
         badge.className = "badge rounded-pill status-badge-error px-2 py-1";
-        badge.textContent = `ERROR · ${v.error_count} Error(s), ${v.warn_count} Warn`;
+        badge.textContent = `${prefix}ERROR · ${v.error_count} Error(s), ${v.warn_count} Warn`;
       } else if (v.warn_count > 0) {
         badge.className = "badge rounded-pill status-badge-warn px-2 py-1";
-        badge.textContent = `WARN · ${v.warn_count} Warning(s)`;
+        badge.textContent = `${prefix}WARN · ${v.warn_count} Warning(s)`;
       } else {
         badge.className = "badge rounded-pill status-badge-pass px-2 py-1";
-        badge.textContent = "PASS · Valid";
+        badge.textContent = `${prefix}PASS · Valid`;
       }
     }
     if (fixAllBtn && v) {
@@ -3380,7 +3727,9 @@
   /**
    * Render the Right-Pane Real-Time Validation Drawer.
    *
-   * @summary Displays PASS status or actionable per-issue `Auto-Fix` buttons.
+   * @summary Displays PASS status, cross-file bundle issue jump pills when the
+   *   active file passes while sibling files have findings, or actionable
+   *   per-issue `Auto-Fix` buttons.
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
@@ -3391,7 +3740,8 @@
       return;
     }
 
-    const showAll = document.getElementById("select-validation-scope")?.value === "all";
+    const scopeSelect = document.getElementById("select-validation-scope");
+    const showAll = scopeSelect?.value === "all";
     const v = AppStore.validation || { issues_by_file: {}, all_issues: [] };
     const scopedIssues = showAll
       ? v.all_issues || []
@@ -3403,12 +3753,62 @@
       );
     }
 
+    const bindJumpAndShowAllHandlers = () => {
+      drawer.querySelectorAll("[data-jump-fid]").forEach((pillBtn) => {
+        pillBtn.addEventListener("click", () => {
+          jumpToPolicyFile(pillBtn.dataset.jumpFid);
+        });
+      });
+      drawer.querySelector("#btn-drawer-show-all")?.addEventListener("click", () => {
+        if (scopeSelect) {
+          scopeSelect.value = "all";
+          syncStudioSingleSelects(scopeSelect);
+          renderValidationDrawer();
+        }
+      });
+    };
+
     if (!scopedIssues.length) {
+      const otherActionable = !showAll
+        ? (v.all_issues || []).filter(
+            (i) =>
+              i.file_id !== AppStore.selectedFileId &&
+              (i.severity === "ERROR" || i.severity === "WARN")
+          )
+        : [];
+
+      let crossFileBannerHtml = "";
+      if (otherActionable.length > 0) {
+        const byFid = {};
+        otherActionable.forEach((iss) => {
+          byFid[iss.file_id] = (byFid[iss.file_id] || 0) + 1;
+        });
+        const jumpPillsHtml = Object.keys(byFid)
+          .map((fidKey) => {
+            const fn = CATALOG_BY_ID[fidKey]?.filename || fidKey;
+            return `<button type="button" class="studio-jump-pill" data-jump-fid="${escapeHtml(fidKey)}" title="Switch to ${escapeHtml(fn)}">${escapeHtml(fn)} (${byFid[fidKey]})</button>`;
+          })
+          .join(" ");
+
+        crossFileBannerHtml = `
+          <div class="mt-2 p-2 rounded studio-subcard d-flex flex-wrap align-items-center justify-content-between gap-2" style="font-size: 0.75rem;">
+            <div class="d-flex flex-wrap align-items-center gap-1">
+              <span class="text-body-secondary">Other selected bundle files have <strong>${otherActionable.length}</strong> finding(s):</span>
+              ${jumpPillsHtml}
+            </div>
+            <button type="button" id="btn-drawer-show-all" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size: 0.72rem;">Show All Selected Files</button>
+          </div>`;
+      }
+
+      const activeFn = CATALOG_BY_ID[AppStore.selectedFileId]?.filename || "Active file";
+      const passSubject = showAll ? "All selected files" : escapeHtml(activeFn);
       drawer.innerHTML = `
         <div class="d-flex align-items-center gap-2 p-2 rounded status-badge-pass">
-          <strong>PASS:</strong>
+          <strong>PASS (${passSubject}):</strong>
           <span>Zero schema, UTF-8 BOM, sandbox mount, or cross-OS runtime issues detected.</span>
-        </div>`;
+        </div>
+        ${crossFileBannerHtml}`;
+      bindJumpAndShowAllHandlers();
       return;
     }
 
@@ -3417,7 +3817,7 @@
         const fMeta = CATALOG_BY_ID[issue.file_id];
         const fileTag =
           showAll && fMeta
-            ? `<span class="badge studio-badge-neutral me-1">${escapeHtml(fMeta.filename)}</span>`
+            ? `<button type="button" class="studio-jump-pill me-1" data-jump-fid="${escapeHtml(issue.file_id)}" title="Switch editor to ${escapeHtml(fMeta.filename)}">${escapeHtml(fMeta.filename)}</button>`
             : "";
         const lineTag = issue.line
           ? ` <span class="text-body-secondary">(line ${issue.line})</span>`
@@ -3431,9 +3831,9 @@
         return `
           <div class="issue-row severity-${escapeHtml(issue.severity)}">
             <div>
-              <div class="fw-semibold" style="font-size:0.8rem;">
+              <div class="fw-semibold d-flex flex-wrap align-items-center gap-1" style="font-size:0.8rem;">
                 <span class="badge ${issue.severity === "ERROR" ? "text-bg-danger" : issue.severity === "WARN" ? "text-bg-warning" : "text-bg-info"} me-1">${escapeHtml(issue.severity)}</span>
-                ${fileTag}${escapeHtml(issue.title)}${lineTag}
+                ${fileTag}<span>${escapeHtml(issue.title)}${lineTag}</span>
               </div>
               <div class="text-body-secondary mt-1" style="font-size:0.76rem;">${escapeHtml(issue.message)}</div>
             </div>
@@ -3441,6 +3841,8 @@
           </div>`;
       })
       .join("");
+
+    bindJumpAndShowAllHandlers();
 
     drawer.querySelectorAll("[data-autofix-code]").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -3633,6 +4035,9 @@
       AppStore.unparsedCodeFiles = {};
       AppStore.fileDetailsExpanded = false;
       AppStore.fileLockExpanded = false;
+      AppStore.permFilterQuery = "";
+      AppStore.domainFilterQuery = "";
+      AppStore.mcpFilterQuery = "";
       AppStore.state.os_list = [];
       AppStore.state.surfaces = [];
       AppStore.state.selected_file_ids = [];
@@ -4000,12 +4405,40 @@
       }
     });
 
-    // Validation Drawer Scope Dropdown
+    // Validation Drawer Scope Dropdown & Right-Pane Header Status Pills
     document.getElementById("select-validation-scope")?.addEventListener("change", () => {
       renderValidationDrawer();
     });
 
-    // Top-Bar Reference Guide Modal Section & OS Controls
+    const toggleBundleValidationScope = () => {
+      const scopeSel = document.getElementById("select-validation-scope");
+      if (!scopeSel) {
+        return;
+      }
+      scopeSel.value = scopeSel.value === "all" ? "active" : "all";
+      syncStudioSingleSelects(scopeSel);
+      renderValidationDrawer();
+    };
+
+    const globalValBadge = document.getElementById("global-validation-badge");
+    globalValBadge?.addEventListener("click", toggleBundleValidationScope);
+    globalValBadge?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggleBundleValidationScope();
+      }
+    });
+
+    document.getElementById("active-file-status-pill")?.addEventListener("click", () => {
+      const scopeSel = document.getElementById("select-validation-scope");
+      if (scopeSel) {
+        scopeSel.value = "active";
+        syncStudioSingleSelects(scopeSel);
+        renderValidationDrawer();
+      }
+    });
+
+    // Top-Bar Reference Guide Modal Section, OS & Quick Search Controls
     document.getElementById("select-ref-section")?.addEventListener("change", (e) => {
       AppStore.refModalSection = e.target.value;
       renderReferenceGuideModal();
@@ -4014,6 +4447,17 @@
     document.getElementById("select-ref-cli-os")?.addEventListener("change", (e) => {
       AppStore.refModalCliOs = e.target.value;
       renderReferenceGuideModal();
+    });
+
+    document.getElementById("input-ref-search")?.addEventListener("input", (e) => {
+      AppStore.refFilterQuery = e.target.value;
+      renderReferenceGuideModal();
+    });
+
+    document.getElementById("btn-clear-ref-search")?.addEventListener("click", () => {
+      AppStore.refFilterQuery = "";
+      renderReferenceGuideModal();
+      document.getElementById("input-ref-search")?.focus();
     });
 
     document.getElementById("referenceGuideModal")?.addEventListener("show.bs.modal", () => {

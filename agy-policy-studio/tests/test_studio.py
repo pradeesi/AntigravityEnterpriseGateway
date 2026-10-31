@@ -1203,3 +1203,61 @@ def test_custom_surface_dropdowns_and_theme_ui_consistency(client) -> None:
         assert legacy_dark_cls not in js, f"Legacy class {legacy_dark_cls} still in studio.js"
 
 
+def test_intuitive_composer_search_and_scoped_validation_ux(client) -> None:
+    """
+    Verify separated record composers, list search toolbars, toggle strips, and scoped validation UX.
+
+    Summary:
+        Ensures new-record inputs (`.studio-composer-box`) are visually and structurally
+        separated from list filter toolbars (`.studio-list-panel` / `.studio-search-wrap`),
+        boolean switches use full-width `.studio-toggle-strip` containers, key-value forms
+        render `.studio-col-header` labels, and the right-pane validation header/drawer
+        distinguishes active-file vs. bundle status with cross-file jump links.
+    Parameters:
+        client: Pytest Flask test client fixture.
+    Returns:
+        None.
+    Raises:
+        AssertionError: If expected UX markers are missing or forbidden legacy classes reappear.
+    """
+    html = client.get("/").get_data(as_text=True)
+    css = client.get("/static/css/studio.css").get_data(as_text=True)
+    js = client.get("/static/js/studio.js").get_data(as_text=True)
+
+    for marker in (
+        'id="active-file-status-pill"',
+        'id="ref-cli-os-wrap"',
+        'id="input-ref-search"',
+        'id="btn-clear-ref-search"',
+    ):
+        assert marker in html, f"Expected {marker} in index.html"
+
+    for css_selector in (
+        ".perm-bucket-tabs",
+        ".perm-bucket-tab",
+        ".studio-composer-box",
+        ".studio-list-panel",
+        ".studio-list-toolbar",
+        ".studio-search-wrap",
+        ".studio-col-header",
+        ".studio-toggle-strip",
+        ".studio-jump-pill",
+    ):
+        assert css_selector in css, f"Expected {css_selector} in studio.css"
+
+    for js_marker in (
+        "data-bucket-tab=",
+        "studio-composer-box",
+        "studio-list-panel",
+        "buildSearchBoxHtml(",
+        "studio-toggle-strip",
+        "studio-col-header",
+        "studio-jump-pill",
+        "function jumpToPolicyFile(",
+        "input-domain-search",
+        "input-mcp-search",
+        "btn-drawer-show-all",
+    ):
+        assert js_marker in js, f"Expected {js_marker} in studio.js"
+
+

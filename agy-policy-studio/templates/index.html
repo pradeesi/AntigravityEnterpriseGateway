@@ -390,7 +390,8 @@ Dependencies / Side Effects:
               <div class="d-flex flex-wrap align-items-center gap-2">
                 <span id="active-file-title" class="fw-semibold mono-input" style="font-size: 0.86rem;">admin_settings.json</span>
                 <span id="sync-status-pill" class="badge studio-badge-neutral fw-normal" style="font-size: 0.7rem;">Two-Way Synced</span>
-                <span id="global-validation-badge" class="badge rounded-pill status-badge-pass px-2 py-1" style="font-size: 0.72rem;">PASS &middot; 0 Issues</span>
+                <span id="active-file-status-pill" class="badge rounded-pill status-badge-pass px-2 py-1 d-none" style="font-size: 0.71rem;">This File: PASS</span>
+                <span id="global-validation-badge" class="badge rounded-pill status-badge-pass px-2 py-1" role="button" tabindex="0" title="Click to toggle bundle validation issues" style="font-size: 0.72rem; cursor: pointer;">PASS &middot; 0 Issues</span>
                 <button id="btn-fix-all" type="button" class="btn btn-sm btn-warning py-0 px-2 fw-semibold d-none" style="font-size: 0.73rem; height: 24px;">
                   Auto-Fix All
                 </button>
@@ -536,23 +537,34 @@ Dependencies / Side Effects:
         </div>
 
         <div class="px-3 py-2 studio-modal-toolbar d-flex flex-wrap align-items-center justify-content-between gap-2">
-          <div class="d-flex align-items-center gap-2">
-            <label for="select-ref-section" class="form-label-sm mb-0">Show Section</label>
-            <select id="select-ref-section" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 265px;">
-              <option value="all" selected>All Reference Tables (1 &ndash; 3)</option>
-              <option value="os">1. Minimum OS Requirements (Win / Mac / Linux)</option>
-              <option value="versions">2. Minimum Antigravity Versions (CLI / Desktop / Web / IDEs)</option>
-              <option value="files">3. Configuration Files, Mandatory Status &amp; Admin CLI</option>
-            </select>
+          <div class="d-flex flex-wrap align-items-center gap-3">
+            <div class="d-flex align-items-center gap-2">
+              <label for="select-ref-section" class="form-label-sm mb-0">Show Section</label>
+              <select id="select-ref-section" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 255px;">
+                <option value="all" selected>All Reference Tables (1 &ndash; 3)</option>
+                <option value="os">1. Minimum OS Requirements (Win / Mac / Linux)</option>
+                <option value="versions">2. Minimum Antigravity Versions (CLI / Desktop / Web / IDEs)</option>
+                <option value="files">3. Configuration Files, Mandatory Status &amp; Admin CLI</option>
+              </select>
+            </div>
+
+            <div id="ref-cli-os-wrap" class="d-flex align-items-center gap-2">
+              <label for="select-ref-cli-os" class="form-label-sm mb-0">Table 3 Target OS &amp; Admin CLI</label>
+              <select id="select-ref-cli-os" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 220px;">
+                <option value="linux" selected>Linux (chmod + chattr +i)</option>
+                <option value="macos">macOS (chmod + chflags schg)</option>
+                <option value="windows">Windows (BOM-free + attrib + icacls)</option>
+              </select>
+            </div>
           </div>
 
-          <div class="d-flex align-items-center gap-2">
-            <label for="select-ref-cli-os" class="form-label-sm mb-0">Table 3 Target OS &amp; Admin CLI</label>
-            <select id="select-ref-cli-os" class="form-select form-select-sm studio-select-compact" style="width: auto; min-width: 225px;">
-              <option value="linux" selected>Linux (chmod + chattr +i)</option>
-              <option value="macos">macOS (chmod + chflags schg)</option>
-              <option value="windows">Windows (BOM-free + attrib + icacls)</option>
-            </select>
+          <div class="studio-search-wrap" style="min-width: 220px; flex: 0 1 260px;">
+            <svg class="studio-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.75"></circle>
+              <line x1="10.5" y1="10.5" x2="14" y2="14"></line>
+            </svg>
+            <input type="search" id="input-ref-search" class="form-control form-control-sm studio-search-input" placeholder="Search tables, files, paths...">
+            <button type="button" id="btn-clear-ref-search" class="studio-search-clear d-none" aria-label="Clear search" title="Clear search">&times;</button>
           </div>
         </div>
 
