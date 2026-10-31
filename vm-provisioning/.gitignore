@@ -1,0 +1,43 @@
+# ==============================================================================
+# FILE HEADER: Git Ignore Rules — GCP Antigravity Client VM Provisioning
+# ==============================================================================
+# Author: Pradeep Singh
+# License: Apache-2.0
+#
+# Purpose:
+#   Prevents local environment overrides, RDP connection profiles, SSH keys,
+#   service account credentials, and editor/OS noise from entering git history.
+#
+# Architecture / Context:
+#   Applies to `New/vm-provisioning/` and all nested subdirectories (`common/`,
+#   `linux/`, `windows/`).
+#
+# Dependencies / Side Effects:
+#   Explicitly un-ignores `.env.example` and `settings.env`.
+# ==============================================================================
+
+# Secrets, Credentials & Local Overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+*.rdp
+*credentials*.json
+*service-account*.json
+gcloud-key.json
+
+# Temporary Startup / Diagnostic Artifacts
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Operating System & IDE Noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,21 @@
+# ==============================================================================
+# FILE HEADER: Pinned Python Dependencies — Antigravity Enterprise Gateway
+# ==============================================================================
+# Author: Pradeep Singh
+# License: Apache-2.0
+#
+# Purpose:
+#   Pinned third-party Python dependencies for the FastAPI Enterprise Gateway.
+# Architecture / Context:
+#   Installed in local virtual environments (`.venv`) and `python/Dockerfile`.
+# Dependencies / Side Effects:
+#   Provides FastAPI, Uvicorn ASGI server, httpx streaming client, google-auth
+#   ADC token manager, and python-dotenv settings parser.
+# ==============================================================================
+
+fastapi==0.115.11
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+google-auth==2.38.0
+requests==2.32.3
+python-dotenv==1.0.1

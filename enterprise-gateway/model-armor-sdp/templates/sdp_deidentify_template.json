@@ -1,0 +1,18 @@
+{
+  "templateId": "agy-pci-creds-pii-deid",
+  "deidentifyTemplate": {
+    "displayName": "Antigravity Broad-Spectrum Enterprise Security, PCI, Credentials & PII Redactor",
+    "description": "Replaces clear-text PCI numbers, credentials, PII, and prohibited security domain patterns with [INFOTYPE] tags.",
+    "deidentifyConfig": {
+      "infoTypeTransformations": {
+        "transformations": [
+          {
+            "primitiveTransformation": {
+              "replaceWithInfoTypeConfig": {}
+            }
+          }
+        ]
+      }
+    }
+  }
+}

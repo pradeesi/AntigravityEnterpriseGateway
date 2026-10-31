@@ -1,0 +1,99 @@
+# ==============================================================================
+# FILE HEADER: Root Git Ignore Policy — Antigravity Enterprise Reference Repo
+# ==============================================================================
+# Purpose:
+#   Prevents accidental commits of environment secret files, API keys, TLS
+#   certificates, rendered local MDM configs, GCP service account tokens,
+#   compiled binaries, Python virtual environments, and OS/IDE noise across
+#   all modules (`enterprise-gateway/`, `vm-provisioning/`, `agy-config/`).
+#
+# Architecture / Context:
+#   Repository-wide `.gitignore` placed at the root of `AntigravityEnterpriseGateway/`
+#   so the entire reorganized folder can be initialized directly as a standalone Git repository.
+#
+# Dependencies / Side Effects:
+#   Explicitly preserves tracked `.env.example` and `settings.env` templates
+#   while force-excluding all `.env` and `*.local.*` runtime files.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Secrets, Environment Files & Rendered Local Configs
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local.json
+*.local.yaml
+*.local.yml
+*.local.env
+*credentials*.json
+*service-account*.json
+*key*.json
+!**/templates/*.json
+!**/configs/**/*.json
+!enterprise-gateway/admin_settings.json
+
+# Cryptographic keys, certificates & keystores
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+*.crt
+*.cer
+*.der
+
+# Remote Desktop & SSH artifacts
+*.rdp
+id_rsa*
+id_ed25519*
+*.ppk
+
+# ------------------------------------------------------------------------------
+# 2. Language Runtime, Build & Dependency Artifacts (Python & Go)
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Go binaries & coverage profiles
+enterprise-gateway/go/gateway
+enterprise-gateway/go/antigravity-gateway
+*.exe
+*.out
+coverage.txt
+
+# ------------------------------------------------------------------------------
+# 3. Runtime Logs, Audit Trails & MDM Backups
+# ------------------------------------------------------------------------------
+*.log
+*.jsonl
+*.bak
+*.orig
+backups/
+audit/
+temp/
+
+# ------------------------------------------------------------------------------
+# 4. OS & IDE Metadata Noise
+# ------------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

@@ -1,0 +1,138 @@
+# ==============================================================================
+# FILE HEADER: Unified GKE Manifests — Antigravity Enterprise Gateway
+# ==============================================================================
+# Purpose:
+#   Production Kubernetes manifests (ConfigMap, Workload Identity ServiceAccount,
+#   Deployment, 3600s SSE BackendConfig, and Internal LoadBalancer Service) for
+#   running either the Python or Go Enterprise Gateway container on GKE.
+#
+# Architecture / Context:
+#   Mirrors every variable from `settings.env` in `antigravity-gateway-config`
+#   and mounts `GATEWAY_API_KEY` from Kubernetes Secret `antigravity-gateway-secret`.
+#
+# Dependencies / Side Effects:
+#   Requires GKE Workload Identity enabled and bound to GCP Service Account
+#   `agy-gateway-sa@<PROJECT_ID>.iam.gserviceaccount.com`.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# BLOCK 1: Gateway Runtime ConfigMap (Mirrors Unified settings.env)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: antigravity-gateway-config
+  namespace: default
+data:
+  PROJECT_ID: "REPLACE_WITH_PROJECT_ID"
+  REGION: "europe-west1"
+  PORT: "8080"
+  LOG_LEVEL: "INFO"
+  LOG_TELEMETRY_PAYLOADS: "false"
+  SKIP_ADC_INIT: "false"
+  ENABLE_MODEL_ARMOR: "true"
+  MODEL_ARMOR_TEMPLATE_ID: "agy-enterprise-armor"
+  MODEL_ARMOR_MODE: "inline"
+  MODEL_ARMOR_FAIL_CLOSED: "true"
+  COST_CENTER_PROJECT_MAP: ""
+  MODEL_REGION_MAP: ""
+  FAILOVER_REGIONS: ""
+  DEFAULT_FLASH_FALLBACK_MODEL: "gemini-3.8-flash"
+  OPENAI_UPSTREAM_BASE_URL: ""
+---
+# ------------------------------------------------------------------------------
+# BLOCK 2: GKE Workload Identity ServiceAccount
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: antigravity-gateway-ksa
+  namespace: default
+  annotations:
+    iam.gke.io/gcp-service-account: "agy-gateway-sa@REPLACE_WITH_PROJECT_ID.iam.gserviceaccount.com"
+---
+# ------------------------------------------------------------------------------
+# BLOCK 3: Gateway Deployment (Python or Go Container Image)
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: antigravity-gateway
+  namespace: default
+  labels:
+    app: antigravity-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: antigravity-gateway
+  template:
+    metadata:
+      labels:
+        app: antigravity-gateway
+    spec:
+      serviceAccountName: antigravity-gateway-ksa
+      containers:
+        - name: gateway
+          image: europe-west1-docker.pkg.dev/REPLACE_WITH_PROJECT_ID/antigravity/gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: antigravity-gateway-config
+          env:
+            - name: GATEWAY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: antigravity-gateway-secret
+                  key: GATEWAY_API_KEY
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 20
+---
+# ------------------------------------------------------------------------------
+# BLOCK 4: 60-Minute SSE Streaming BackendConfig & Internal LoadBalancer Service
+# ------------------------------------------------------------------------------
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: antigravity-gateway-backendconfig
+  namespace: default
+spec:
+  timeoutSec: 3600
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: antigravity-gateway-svc
+  namespace: default
+  annotations:
+    cloud.google.com/backend-config: '{"default": "antigravity-gateway-backendconfig"}'
+    networking.gke.io/load-balancer-type: "Internal"
+spec:
+  type: LoadBalancer
+  selector:
+    app: antigravity-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP

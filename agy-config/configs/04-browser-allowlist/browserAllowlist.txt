@@ -1,0 +1,19 @@
+# ==============================================================================
+# File: ~/.gemini/antigravity/browserAllowlist.txt
+# Purpose: Local trusted domain allowlist for the Antigravity Browser Subagent.
+# Architecture/Context: Enforced by Antigravity Desktop App, Antigravity IDE,
+#          Web Hub (agy --hub), and CLI (`/browser`) alongside the server-side
+#          bad-URL denylist. Only hostnames/domains listed below open without
+#          prompting; combined with kernel immutability, developers cannot click
+#          "Always allow" to persist unapproved external domains.
+# Dependencies/Side Effects: Must be locked with chattr +i (Linux), chflags schg
+#          (macOS), or icacls Deny-Write/Delete ACLs (Windows).
+# ==============================================================================
+localhost
+127.0.0.1
+antigravity.google
+docs.cloud.google.com
+cloud.google.com
+pkg.go.dev
+docs.python.org
+internal.corp.example.com

@@ -1,0 +1,61 @@
+{
+  "gateway": {
+    "enabled": true,
+    "url": "REPLACE_WITH_GATEWAY_URL",
+    "apiKey": "REPLACE_WITH_GATEWAY_API_KEY",
+    "wireProtocol": "genai",
+    "customHeaders": {
+      "X-Cost-Center": "Platform-Engineering",
+      "X-Corporate-BU": "DevTools"
+    }
+  },
+  "caCertPath": "/etc/ssl/certs/ca-certificates.crt",
+  "models": {
+    "defaultModelId": "gemini-3.8-flash",
+    "tiers": {
+      "flash": [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash"
+      ],
+      "pro": [
+        "gemini-4-argon-high",
+        "gemini-4-argon-medium",
+        "gemini-4-argon-low",
+        "gemini-3.1-pro-preview"
+      ],
+      "flashLite": [
+        "gemini-3.5-flash-lite"
+      ]
+    },
+    "list": [
+      {
+        "modelId": "gemini-4-argon-high",
+        "displayName": "Gemini 4 Argon (High Thinking)"
+      },
+      {
+        "modelId": "gemini-4-argon-medium",
+        "displayName": "Gemini 4 Argon (Medium Thinking)"
+      },
+      {
+        "modelId": "gemini-4-argon-low",
+        "displayName": "Gemini 4 Argon (Low Thinking)"
+      },
+      {
+        "modelId": "gemini-3.1-pro-preview",
+        "displayName": "Gemini 3.1 Pro"
+      },
+      {
+        "modelId": "gemini-3.8-flash",
+        "displayName": "Gemini 3.8 Flash"
+      },
+      {
+        "modelId": "gemini-3.7-flash",
+        "displayName": "Gemini 3.7 Flash"
+      },
+      {
+        "modelId": "gemini-3.5-flash-lite",
+        "displayName": "Gemini 3.5 Flash-Lite"
+      }
+    ]
+  }
+}

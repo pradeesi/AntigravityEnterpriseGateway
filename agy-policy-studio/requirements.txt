@@ -1,0 +1,19 @@
+# ==============================================================================
+# FILE HEADER: Python Dependencies — Antigravity Admin Policy Studio
+# ==============================================================================
+# Purpose:
+#   Pinned production and verification dependencies for the stateless Flask +
+#   Bootstrap 5.3 Antigravity Admin Policy Studio web application.
+#
+# Architecture / Context:
+#   Installed into a local virtual environment (`run.sh`) or container image
+#   (`Dockerfile`) for local, Google Cloud Run, or GKE execution.
+#
+# Dependencies / Side Effects:
+#   Requires Python 3.11+ (tested on Python 3.12 and 3.13).
+# ==============================================================================
+Flask==3.1.0
+Werkzeug==3.1.3
+gunicorn==23.0.0
+python-dotenv==1.0.1
+pytest==8.3.5

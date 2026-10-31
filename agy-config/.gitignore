@@ -1,0 +1,62 @@
+# ==============================================================================
+# File: .gitignore
+# Purpose: Prevents sensitive credentials, local environment overrides, runtime
+#          audit logs, backup policy snapshots, and OS/IDE artifacts from being
+#          committed to version control inside `New/agy-config/`.
+# Architecture/Context: Enforces secret hygiene for workstation MDM policy
+#          templates and deployment scripts before packaging for Jamf, Intune,
+#          Ansible, FleetDM, or Google Cloud storage buckets.
+# Dependencies/Side Effects: Git SCM ignore rules; `!.env.example` and
+#          `!settings.env` remain tracked as safe configuration templates.
+# ==============================================================================
+
+# 1. Environment Overrides & Secrets (CRITICAL — Never Commit Live Keys)
+.env
+.env.*
+!.env.example
+*.local.json
+*.secret.json
+*secret*
+!configs/07-security-guard-scripts/*
+
+# 2. Certificates, Private Keys & Cloud Service Account Credentials
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+*credentials*.json
+*service-account*.json
+gcloud-key.json
+
+# 3. Runtime Security Hook Logs & Policy Backup Snapshots
+*.log
+agy_security_audit.log
+*.bak
+*.backup
+*.orig
+*.tmp
+*.corrupted.*
+
+# 4. Packaged MDM Bundles & Build Artifacts
+dist/
+build/
+out/
+*.zip
+*.tar.gz
+*.pkg
+*.intunewin
+
+# 5. Operating System & Editor / IDE Noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

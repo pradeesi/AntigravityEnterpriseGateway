@@ -1,0 +1,18 @@
+[
+  {
+    "filterType": "DANGEROUS",
+    "confidenceLevel": "MEDIUM_AND_ABOVE"
+  },
+  {
+    "filterType": "HATE_SPEECH",
+    "confidenceLevel": "MEDIUM_AND_ABOVE"
+  },
+  {
+    "filterType": "HARASSMENT",
+    "confidenceLevel": "MEDIUM_AND_ABOVE"
+  },
+  {
+    "filterType": "SEXUALLY_EXPLICIT",
+    "confidenceLevel": "MEDIUM_AND_ABOVE"
+  }
+]

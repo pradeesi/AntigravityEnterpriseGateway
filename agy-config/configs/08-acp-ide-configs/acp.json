@@ -1,0 +1,18 @@
+{
+  "agent_servers": {
+    "Antigravity": {
+      "command": "/usr/local/bin/agy",
+      "args": [
+        "acp"
+      ],
+      "env": {
+        "AGY_LLM_GATEWAY_URL": "https://REPLACE_WITH_GATEWAY_URL",
+        "AGY_LLM_GATEWAY_API_KEY": "REPLACE_WITH_GATEWAY_API_KEY",
+        "AGY_LLM_GATEWAY_WIRE_PROTOCOL": "genai",
+        "AGY_LLM_GATEWAY_CA_CERT": "/etc/ssl/certs/ca-certificates.crt",
+        "AGY_LLM_GATEWAY_HEADERS": "X-Cost-Center: CC-9941-SEC,X-Corporate-BU: Enterprise-Security,X-Goog-User-Project: REPLACE_WITH_PROJECT_ID",
+        "AGY_LLM_GATEWAY_MODELS": "gemini-4-argon-high,gemini-4-argon-medium,gemini-4-argon-low,gemini-3.1-pro-preview,gemini-3.8-flash,gemini-3.7-flash,gemini-3.1-flash-lite"
+      }
+    }
+  }
+}

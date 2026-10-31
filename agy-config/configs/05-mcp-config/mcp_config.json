@@ -1,0 +1,50 @@
+{
+  "mcpServers": {
+    "catalog": {
+      "command": "/usr/local/bin/mock_mcp_server.py",
+      "args": [
+        "catalog"
+      ],
+      "disabled": true,
+      "enabledTools": [
+        "ping_catalog",
+        "search_catalog",
+        "get_service_owner"
+      ],
+      "disabledTools": [
+        "drop_catalog_table",
+        "export_all_records",
+        "delete_service",
+        "update_permissions"
+      ]
+    },
+    "corp_docs": {
+      "serverUrl": "https://mcp-corp-docs.internal.example.com/mcp/",
+      "disabled": true,
+      "timeoutSeconds": 180,
+      "enabledTools": [
+        "read_doc",
+        "search_docs",
+        "create_ticket"
+      ],
+      "disabledTools": [
+        "delete_repository",
+        "grant_external_access",
+        "export_space",
+        "modify_acl"
+      ]
+    },
+    "untrusted_external": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@untrusted/external-mcp-server"
+      ],
+      "disabled": true,
+      "enabledTools": [],
+      "disabledTools": [
+        "*"
+      ]
+    }
+  }
+}

@@ -1,0 +1,57 @@
+# ==============================================================================
+# FILE HEADER: Git Exclusions — Antigravity Admin Policy Studio
+# ==============================================================================
+# Purpose:
+#   Prevents accidental commits of environment files, secrets, certificates,
+#   virtual environments, Python bytecode, and IDE/OS metadata.
+#
+# Architecture / Context:
+#   Scoped to `New/agy-policy-studio/` for standalone Git, Docker, or Cloud
+#   Build packaging.
+#
+# Dependencies / Side Effects:
+#   Enforces the strict No-Hardcoding & Secrets Protection standard.
+# ==============================================================================
+
+# 1. Secrets, Environment Configs & Certificates
+.env
+.env.*
+!.env.example
+*.pem
+*.crt
+*.cer
+*.der
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*service-account*.json
+*.local.json
+
+# 2. Python Virtual Environments, Bytecode & Test Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# 3. Exported Bundles & Temporary Scratch Outputs
+*.zip
+tmp/
+temp/
+*.log
+
+# 4. OS & Editor Noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

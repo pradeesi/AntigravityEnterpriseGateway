@@ -1,0 +1,96 @@
+{
+  "templateId": "agy-pci-creds-pii-inspect",
+  "inspectTemplate": {
+    "displayName": "Antigravity Broad-Spectrum Enterprise Security, PCI, Credentials & PII Inspector",
+    "description": "Broad-spectrum enterprise detectors for PCI, credentials, PII, and 8 security domains (Recon, Vuln/Pentest, Privesc, DoS/DDoS, Evasion/Malware, Ransomware, Phishing/Spoofing, Website Cloning/Copying).",
+    "inspectConfig": {
+      "minLikelihood": "POSSIBLE",
+      "includeQuote": true,
+      "infoTypes": [
+        {"name": "CREDIT_CARD_NUMBER"},
+        {"name": "CREDIT_CARD_TRACK_NUMBER"},
+        {"name": "CREDIT_CARD_EXPIRATION_DATE"},
+        {"name": "IBAN_CODE"},
+        {"name": "SWIFT_CODE"},
+        {"name": "FINANCIAL_ACCOUNT_NUMBER"},
+        {"name": "US_BANK_ROUTING_MICR"},
+        {"name": "AUTH_TOKEN"},
+        {"name": "AWS_CREDENTIALS"},
+        {"name": "AZURE_AUTH_TOKEN"},
+        {"name": "GCP_API_KEY"},
+        {"name": "GCP_CREDENTIALS"},
+        {"name": "JSON_WEB_TOKEN"},
+        {"name": "OAUTH_CLIENT_SECRET"},
+        {"name": "PASSWORD"},
+        {"name": "SSL_CERTIFICATE"},
+        {"name": "ENCRYPTION_KEY"},
+        {"name": "HTTP_COOKIE"},
+        {"name": "XSRF_TOKEN"},
+        {"name": "EMAIL_ADDRESS"},
+        {"name": "PHONE_NUMBER"},
+        {"name": "PASSPORT"},
+        {"name": "PERSON_NAME"},
+        {"name": "IP_ADDRESS"},
+        {"name": "MAC_ADDRESS"}
+      ],
+      "customInfoTypes": [
+        {
+          "infoType": {"name": "CUSTOM_SEC_NETWORK_RECON_AND_SCANNING"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)\\b(nmap|masscan|zmap|rustscan|unicornscan|nikto|nessus|openvas|qualys|nexpose|acunetix|burp\\s*suite|owasp\\s+zap|zaproxy|nuclei|gobuster|dirbuster|feroxbuster|ffuf|wfuzz|sqlmap|wpscan|metasploit|msfconsole|msfvenom|shodan|censys|maltego|recon-ng|theharvester|amass|subfinder|port\\s+scan(s|ning|ner|ners)?|va\\s+scan(s|ning)?|service\\s+enumeration|banner\\s+grab(s|bing)?|subnet\\s+sweep(s|ing)?|syn\\s+scan(s|ning)?|arp\\s+scan(s|ning)?|socket\\.connect_ex)\\b"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_VULNERABILITY_PENTEST_AND_EXPLOIT"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)\\b(vulnerabilit(y|ies)|vuln(s|erable)?|cve-[0-9]{4}-[0-9]+|cwe-[0-9]+|zero[- ]day|0[- ]?day|security\\s+(flaw|weakness|hole|defect)s?|attack\\s+(surface|vector)s?|penetration\\s+test(s|ing|er|ers)?|pen[- ]?test(s|ing|er|ers)?|offensive\\s+(security|penetration|test(s|ing)?|cyber|hack(ing)?|operations?)|red[- ]?team(s|ing|er|ers)?|adversary\\s+(simulation|emulation)|ethical\\s+hack(ing|er|ers)?|exploit(s|ed|ing|ation|able|ability|-based)?|searchsploit|exploit-db|weaponiz(e|ed|ing|ation)|shellcode|rop\\s+chain|buffer\\s+overflow|heap\\s+spray|sql\\s+injection|sqli|cross-site\\s+scripting|xss|remote\\s+code\\s+execution|command\\s+injection|path\\s+traversal|directory\\s+traversal|ssrf|xxe)\\b"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_PRIVILEGE_ESCALATION_AND_AUTH_BYPASS"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(fodhelper|eventvwr|sdclt|cmstp|computerdefaults|mimikatz|lsass|ntds\\.dit|hashcat|hydra|impacket|bloodhound|linpeas|winpeas|gtfobins|lolbas|kerberoast(ing)?|pass-the-hash|golden\\s+ticket|uac\\s+bypass|privesc|privilege\\s+escalation)\\b|bypass\\s+([a-z0-9_-]+\\s+){0,3}(uac|user\\s+access\\s+control|access\\s+control|authentication|authorization|rbac|iam|mfa|2fa|sso|permission|sudoers))"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_DOS_DDOS_AND_TRAFFIC_FLOOD"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(dos\\s+attack|ddos\\s+attack|denial\\s+of\\s+service|distributed\\s+denial\\s+of\\s+service|syn\\s+flood|udp\\s+flood|icmp\\s+flood|http\\s+flood|slowloris|rudy\\s+attack|smurf\\s+attack|dns\\s+amplification|ntp\\s+amplification|memcached\\s+amplification|hping3|loic|hoic|goldeneye|torshammer|fork\\s+bomb|ping\\s+of\\s+death|packet\\s+flood|maximum\\s+packet\\s+size)\\b|ping\\s+-[fsl]\\s+[0-9]{4,})"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_DEFENSE_EVASION_AND_MALWARE"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(amsi\\s+bypass|etw\\s+bypass|dll\\s+injection|process\\s+hollowing|process\\s+injection|reflective\\s+loader|keylogger|screenlogger|reverse\\s+shell|bind\\s+shell|meterpreter|cobalt\\s+strike|c2\\s+beacon|rootkit|word_watcher|test_word_watcher)\\b|(bypass|disable|evade|kill|tamper)\\s+([a-z0-9_-]+\\s+){0,3}(symantec|antivirus|edr|xdr|defender|crowdstrike|sentinelone|carbon\\s+black|mcafee|sophos|trellix|dlp|firewall|waf|ids|ips)|(prevent|block|monitor)\\s+([a-z0-9_-]+\\s+){0,3}opening\\s+([a-z0-9_-]+\\s+){0,2}(word|excel|powerpoint|office|files|applications))"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_RANSOMWARE_WIPER_AND_DATA_SABOTAGE"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(ransomware|crypto-locker|file\\s+wiper|vssadmin\\s+delete\\s+shadows|shadowcopy\\s+delete|wbadmin\\s+delete\\s+catalog|sdelete|shred\\s+-u)\\b|encrypt(ing|ed)?\\s+([a-z0-9_-]+\\s+){0,4}(file|files|data|folder|directory)\\s+and\\s+(delet(e|ed|ing)|remov(e|ed|ing)|unlink(ing)?|shred(ding)?|wip(e|ing))\\s+([a-z0-9_-]+\\s+){0,3}original|encrypt(ing)?\\s+([a-z0-9_-]+\\s+){0,3}(pii|confidential|sensitive)\\s+([a-z0-9_-]+\\s+){0,4}(bypass|evade|mask))"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_PHISHING_SPOOFING_AND_EXFILTRATION"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(email\\s+spoof(ing)?|sender\\s+spoof(ing)?|arp\\s+spoof(ing)?|dns\\s+spoof(ing)?|dns\\s+tunnel(ing)?|credential\\s+harvest(ing)?|evilginx|gophish|setoolkit|data\\s+exfiltration|malicious\\s+extension)\\b|send(ing)?\\s+([a-z0-9_-]+\\s+){0,3}(email|mail|message)\\s+on\\s+behalf\\s+of\\s+another\\s+user|spoof(ed|ing)?\\s+([a-z0-9_-]+\\s+){0,3}(from\\s+header|sender|email|domain)|clone\\s+([a-z0-9_-]+\\s+){0,4}(dlp|login|portal|corporate|internal)\\s+([a-z0-9_-]+\\s+){0,2}(website|site|page)|host(ing)?\\s+([a-z0-9_-]+\\s+){0,4}\\.(bat|cmd|vbs|vbe|ps1|psm1|hta|scr|pif|exe|dll|msi|cpl|wsf)\\b)"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_WEBSITE_CLONING_AND_SCRAPING"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(clone|cloning|copy|copying|mirror|mirroring|replicate|replicating|recreate|recreating|duplicate|duplicating|rip|ripping|scrape|scraping|imitate|imitating|spoof|spoofing)\\s+(of\\s+)?([a-z0-9_/-]+\\s+){0,5}(website|websites|webpage|webpages|web\\s+page|web\\s+site|site|sites|homepage|home\\s+page|landing\\s+page|login\\s+page|search\\s+page|portal|frontend|ui|https?://[^\\s'>?]+|(www\\.)?[a-z0-9-]+(\\.[a-z0-9-]+)*\\.(com|org|net|edu|gov|mil|io|co|ai|app|dev|cloud|gg|me|info|biz|us|uk|eu|de|fr|in|jp|cn|br|au|ca|nl|es|it|ch|se|no|goog|google))\\b|\\b(website|webpage|web\\s+page|site|homepage|landing\\s+page)\\s+(clone|cloner|cloning|copy|copier|mirror|replica|recreation|ripper|scraper|scraping)\\b|\\b(httrack|webhttrack|pywebcopy|sitesucker|teleport\\s+pro|wget\\s+[^']*(--mirror|--page-requisites|--convert-links)))"
+          }
+        }
+      ]
+    }
+  }
+}

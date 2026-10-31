@@ -1,0 +1,100 @@
+# ==============================================================================
+# FILE HEADER: GKE Kubernetes Manifest — Antigravity Admin Policy Studio
+# ==============================================================================
+# Purpose:
+#   Deploys a hardened, multi-replica, non-root instance of the stateless
+#   Antigravity Admin Policy Studio onto Google Kubernetes Engine (GKE).
+#
+# Architecture / Context:
+#   Defines a `ConfigMap` for non-secret settings, a security-hardened
+#   `Deployment` (`runAsNonRoot: true`, read-only root filesystem compatible),
+#   and a `Service` exposing HTTP port 80 -> container port 8090.
+#
+# Dependencies / Side Effects:
+#   Substitute `REPLACE_WITH_CONTAINER_IMAGE` before applying via `kubectl`.
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agy-policy-studio-config
+  labels:
+    app: agy-policy-studio
+data:
+  PORT: "8090"
+  LOG_LEVEL: "INFO"
+  MAX_UPLOAD_MB: "16"
+  DEFAULT_DEV_USER: "alice"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agy-policy-studio
+  labels:
+    app: agy-policy-studio
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agy-policy-studio
+  template:
+    metadata:
+      labels:
+        app: agy-policy-studio
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: policy-studio
+          image: REPLACE_WITH_CONTAINER_IMAGE
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: agy-policy-studio-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agy-policy-studio
+  labels:
+    app: agy-policy-studio
+spec:
+  type: ClusterIP
+  selector:
+    app: agy-policy-studio
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

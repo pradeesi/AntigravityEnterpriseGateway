@@ -1,0 +1,614 @@
+<!--
+==============================================================================
+FILE HEADER: Single-Page Split-Pane Template — Antigravity Policy Studio
+==============================================================================
+Purpose:
+  Renders the responsive Bootstrap 5.3 Policy Studio interface (Light theme
+  default with Dark theme toggle) using a clean Progressive Multi-Select
+  Dropdown Cascade on the Left Panel and a streamlined Live Code Editor +
+  Real-Time Validator on the Right Panel.
+
+Architecture / Context:
+  Served by `GET /` in `app.py` with embedded `bootstrap_json` initial state.
+  Controlled interactively by `static/js/studio.js` and styled by
+  `static/css/studio.css`.
+
+Dependencies / Side Effects:
+  Loads Bootstrap 5.3.3 CSS/JS and Inter + JetBrains Mono fonts. Performs zero
+  external telemetry or analytics calls.
+==============================================================================
+-->
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Stateless Enterprise Admin Policy Studio to author, import, validate, and export Google Antigravity MDM configurations across Linux, macOS, Windows, CLI, Desktop, Web Hub, and IDE plugins.">
+  <title>Antigravity Admin Policy Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='css/studio.css') }}" rel="stylesheet">
+</head>
+<body>
+  <div class="studio-shell">
+    <!-- Top Header Bar -->
+    <header class="studio-topbar">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+          <h1 class="studio-brand-title">Antigravity Admin Policy Studio</h1>
+          <div class="studio-brand-sub">Cross-OS MDM Generator, Live Two-Way Editor &amp; Runtime Validator</div>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <button id="btn-open-reference" type="button" class="btn btn-sm btn-outline-primary fw-medium" data-bs-toggle="modal" data-bs-target="#referenceGuideModal">
+            Requirements &amp; File Guide
+          </button>
+
+          <button id="btn-open-import" type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importModal">
+            Import / Validate
+          </button>
+
+          <button id="btn-reset-scope" type="button" class="btn btn-sm btn-outline-secondary" title="Clear current OS, Surface, and File selections">
+            Reset Scope
+          </button>
+
+          <button id="btn-download-zip" type="button" class="btn btn-sm btn-primary fw-semibold" disabled>
+            Download MDM Bundle (.zip)
+          </button>
+
+          <button id="btn-theme-toggle" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Toggle Light or Dark Theme" title="Switch Light / Dark theme">
+            <span id="theme-toggle-label">Dark Mode</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Fluid Split-Pane Workspace -->
+    <main class="studio-workspace">
+      <!-- LEFT PANE: Progressive Multi-Select Dropdowns, File Reference & Visual Form -->
+      <section class="studio-left-pane" aria-label="Progressive Policy Configuration Panel">
+        <div class="left-scroll-area">
+
+          <!-- STEP 1: Target OS & Antigravity Surface Multi-Select Dropdowns -->
+          <div id="step1-scope-card" class="step-card">
+            <div class="step-header-row">
+              <div class="d-flex align-items-center gap-2">
+                <span class="step-badge-num">1</span>
+                <h2 class="step-title">Select Target OS &amp; Antigravity Surface</h2>
+              </div>
+              <span class="text-body-secondary" style="font-size: 0.72rem;">Multi-select</span>
+            </div>
+
+            <div class="row g-2 mb-2">
+              <!-- Target OS Multi-Select Dropdown -->
+              <div class="col-sm-6">
+                <label class="form-label-sm" for="dropdownOsBtn">Target Operating System</label>
+                <div class="dropdown">
+                  <button id="dropdownOsBtn" class="studio-multiselect-btn dropdown-toggle is-placeholder" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
+                    <span id="dropdownOsLabel" class="ms-label">Select Target OS...</span>
+                    <span id="dropdownOsCount" class="ms-count-pill d-none">0</span>
+                  </button>
+                  <div class="dropdown-menu studio-multiselect-menu" aria-labelledby="dropdownOsBtn">
+                    <div class="ms-menu-toolbar">
+                      <span class="text-body-secondary fw-medium">Operating Systems</span>
+                      <div>
+                        <button type="button" id="btn-os-select-all" class="ms-action-link">Select All</button>
+                        <span class="text-body-secondary">&middot;</span>
+                        <button type="button" id="btn-os-clear" class="ms-action-link">Clear</button>
+                      </div>
+                    </div>
+                    <div id="menu-os-options">
+                      <label class="ms-check-row" for="chk-os-linux">
+                        <input id="chk-os-linux" type="checkbox" class="form-check-input" data-os-value="linux">
+                        <div>
+                          <div class="ms-check-title">Linux</div>
+                          <div class="ms-check-sub">/etc/antigravity &middot; exebox &middot; chattr +i</div>
+                        </div>
+                      </label>
+                      <label class="ms-check-row" for="chk-os-macos">
+                        <input id="chk-os-macos" type="checkbox" class="form-check-input" data-os-value="macos">
+                        <div>
+                          <div class="ms-check-title">macOS</div>
+                          <div class="ms-check-sub">/Library/Application Support &middot; chflags schg</div>
+                        </div>
+                      </label>
+                      <label class="ms-check-row" for="chk-os-windows">
+                        <input id="chk-os-windows" type="checkbox" class="form-check-input" data-os-value="windows">
+                        <div>
+                          <div class="ms-check-title">Windows</div>
+                          <div class="ms-check-sub">C:\ProgramData\Antigravity &middot; icacls Deny</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Antigravity Surface Multi-Select Dropdown -->
+              <div class="col-sm-6">
+                <label class="form-label-sm" for="dropdownSurfaceBtn">Antigravity Surface</label>
+                <div class="dropdown">
+                  <button id="dropdownSurfaceBtn" class="studio-multiselect-btn dropdown-toggle is-placeholder" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
+                    <span id="dropdownSurfaceLabel" class="ms-label">Select Surface(s)...</span>
+                    <span id="dropdownSurfaceCount" class="ms-count-pill d-none">0</span>
+                  </button>
+                  <div class="dropdown-menu studio-multiselect-menu" aria-labelledby="dropdownSurfaceBtn">
+                    <div class="ms-menu-toolbar">
+                      <span class="text-body-secondary fw-medium">Client Surfaces</span>
+                      <div>
+                        <button type="button" id="btn-surface-select-all" class="ms-action-link">Select All</button>
+                        <span class="text-body-secondary">&middot;</span>
+                        <button type="button" id="btn-surface-clear" class="ms-action-link">Clear</button>
+                      </div>
+                    </div>
+                    <div id="menu-surface-options">
+                      <label class="ms-check-row" for="chk-surface-cli">
+                        <input id="chk-surface-cli" type="checkbox" class="form-check-input" data-surface-value="cli">
+                        <div>
+                          <div class="ms-check-title">AGY CLI</div>
+                          <div class="ms-check-sub">Terminal agent (agy 1.2.15+)</div>
+                        </div>
+                      </label>
+                      <label class="ms-check-row" for="chk-surface-desktop">
+                        <input id="chk-surface-desktop" type="checkbox" class="form-check-input" data-surface-value="desktop">
+                        <div>
+                          <div class="ms-check-title">AGY Desktop</div>
+                          <div class="ms-check-sub">Standalone Desktop App (2.15.0+)</div>
+                        </div>
+                      </label>
+                      <label class="ms-check-row" for="chk-surface-web">
+                        <input id="chk-surface-web" type="checkbox" class="form-check-input" data-surface-value="web">
+                        <div>
+                          <div class="ms-check-title">AGY Web Hub</div>
+                          <div class="ms-check-sub">Self-hosted browser Hub (agy --hub)</div>
+                        </div>
+                      </label>
+                      <label class="ms-check-row" for="chk-surface-ide">
+                        <input id="chk-surface-ide" type="checkbox" class="form-check-input" data-surface-value="ide">
+                        <div>
+                          <div class="ms-check-title">AGY IDE Plugins</div>
+                          <div class="ms-check-sub">VS Code, Visual Studio, JetBrains &amp; Zed ACP</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Workstation User & Cross-Surface Grant Sync -->
+            <div class="row g-2 pt-1">
+              <div class="col-sm-5">
+                <label class="form-label-sm" for="input-dev-user">Workstation Username</label>
+                <input id="input-dev-user" type="text" class="form-control form-control-sm mono-input" value="alice" spellcheck="false" placeholder="alice">
+              </div>
+              <div class="col-sm-7">
+                <label class="form-label-sm" for="select-perm-sync">CLI &amp; Desktop Grant Sync</label>
+                <select id="select-perm-sync" class="form-select form-select-sm">
+                  <option value="linked" selected>Linked (Mirror CLI &harr; Desktop Grants)</option>
+                  <option value="separate">Separate (Edit CLI &amp; Desktop Independently)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 2: Policy Type Dropdown & Target Config Files Multi-Select Dropdown -->
+          <div id="step2-policy-files-card" class="step-card d-none">
+            <div class="step-header-row">
+              <div class="d-flex align-items-center gap-2">
+                <span class="step-badge-num">2</span>
+                <h2 class="step-title">Choose Policy Type &amp; Target Config File(s)</h2>
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label-sm" for="preset-selector">Policy Type / Starter Preset</label>
+              <select id="preset-selector" class="form-select form-select-sm">
+              </select>
+              <div id="preset-description-hint" class="text-body-secondary mt-1" style="font-size: 0.73rem;"></div>
+            </div>
+
+            <div class="mt-2">
+              <label class="form-label-sm" for="dropdownFilesBtn">Target Configuration Files (Included in Export)</label>
+              <div class="dropdown">
+                <button id="dropdownFilesBtn" class="studio-multiselect-btn dropdown-toggle is-placeholder" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
+                  <span id="dropdownFilesLabel" class="ms-label">Select Config File(s) to Configure...</span>
+                  <span id="dropdownFilesCount" class="ms-count-pill d-none">0</span>
+                </button>
+                <div class="dropdown-menu studio-multiselect-menu" aria-labelledby="dropdownFilesBtn">
+                  <div class="ms-menu-toolbar">
+                    <span id="files-available-caption" class="text-body-secondary fw-medium">Matching Files</span>
+                    <div>
+                      <button type="button" id="btn-files-select-all" class="ms-action-link">Select All</button>
+                      <span class="text-body-secondary">&middot;</span>
+                      <button type="button" id="btn-files-clear" class="ms-action-link">Clear</button>
+                    </div>
+                  </div>
+                  <div id="menu-files-options">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Shown when 2+ files are checked so admin switches active file cleanly without overflowing tabs -->
+            <div id="active-file-selector-wrap" class="mt-2 pt-2 border-top d-none">
+              <label class="form-label-sm" for="active-file-selector">Currently Inspecting &amp; Editing File</label>
+              <select id="active-file-selector" class="form-select form-select-sm mono-input fw-medium">
+              </select>
+            </div>
+          </div>
+
+          <!-- STEP 3A: Selected File Reference & Manual Lock / Permissions Card -->
+          <div id="step3-file-ref-card" class="step-card d-none">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+              <div class="d-flex align-items-center gap-2">
+                <span id="ref-group-badge" class="badge text-bg-secondary" style="font-size: 0.7rem;">Group 01</span>
+                <span id="ref-filename-label" class="fw-semibold mono-input" style="font-size: 0.83rem;">admin_settings.json</span>
+              </div>
+              <a id="ref-doc-link" href="https://docs.cloud.google.com/gemini/enterprise/docs/ai-developer-tools/deploy-enterprise-gateway?hl=en" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-medium" style="font-size: 0.76rem;">
+                Official Public Docs &#8599;
+              </a>
+            </div>
+
+            <div class="ref-divider"></div>
+
+            <!-- Purpose -->
+            <div class="mb-2">
+              <div class="ref-field-label">Purpose</div>
+              <div id="ref-file-purpose" class="text-body-secondary" style="font-size: 0.79rem;"></div>
+            </div>
+
+            <!-- Used by Surfaces -->
+            <div class="mb-2">
+              <div class="ref-field-label">Used by Surfaces</div>
+              <div id="ref-file-surfaces" class="d-flex flex-wrap gap-1"></div>
+            </div>
+
+            <!-- Full OS Target Path(s) -->
+            <div class="mb-2">
+              <div class="ref-field-label">Full Target File Path(s)</div>
+              <div id="ref-file-paths"></div>
+            </div>
+
+            <!-- Collapsible Manual File Permissions & Lock / Unlock Commands -->
+            <div class="mt-2 pt-1">
+              <button id="btn-toggle-file-lock-cli" type="button" class="lock-collapse-btn" aria-expanded="false">
+                <span>Manual File Permissions &amp; Lock / Unlock Commands</span>
+                <span id="file-lock-chevron" class="small text-body-secondary">&#9662; Show</span>
+              </button>
+
+              <div id="file-lock-cli-body" class="mt-2 d-none">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                  <div class="d-flex align-items-center gap-2">
+                    <label for="select-file-lock-os" class="form-label-sm mb-0">OS</label>
+                    <select id="select-file-lock-os" class="form-select form-select-sm" style="width: auto; min-width: 165px;">
+                    </select>
+                  </div>
+                  <div class="d-flex align-items-center gap-1">
+                    <button id="btn-copy-file-lock" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.73rem; height: 26px;">Copy Lock</button>
+                    <button id="btn-copy-file-unlock" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.73rem; height: 26px;">Copy Unlock</button>
+                  </div>
+                </div>
+
+                <div id="ref-perm-summary" class="text-body-secondary mb-2" style="font-size: 0.74rem;"></div>
+
+                <div class="mb-2">
+                  <div class="ref-field-label">Set Permissions &amp; Lock File</div>
+                  <pre id="pre-file-lock-cmd" class="cli-code-block"></pre>
+                </div>
+
+                <div>
+                  <div class="ref-field-label">Maintenance Unlock</div>
+                  <pre id="pre-file-unlock-cmd" class="cli-code-block"></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 3B: Visual Policy Form Controls for Currently Active File -->
+          <div id="form-panel-container" class="d-none">
+          </div>
+
+        </div>
+      </section>
+
+      <!-- RIGHT PANE: Streamlined Live Code Editor & Real-Time Validator -->
+      <aside class="studio-right-pane" aria-label="Live Code Editor and Validator">
+
+        <!-- Progressive Empty State (Shown until >= 1 Target Config File is selected) -->
+        <div id="right-empty-state" class="right-empty-state">
+          <div class="empty-guide-box">
+            <h2 class="fs-6 fw-semibold mb-1">Configure or Validate Antigravity Policies</h2>
+            <p class="text-body-secondary small mb-3">
+              Follow the progressive controls on the left to build BOM-free, schema-validated MDM configurations, or import an existing file immediately.
+            </p>
+
+            <div class="mb-3">
+              <div class="guide-step-item">
+                <span id="guide-dot-1" class="guide-step-dot active">1</span>
+                <div>
+                  <div class="fw-semibold small">Select Target OS &amp; Antigravity Surface</div>
+                  <div class="text-body-secondary" style="font-size: 0.75rem;">Choose one or more operating systems (Linux, macOS, Windows) and client surfaces.</div>
+                </div>
+              </div>
+              <div class="guide-step-item">
+                <span id="guide-dot-2" class="guide-step-dot">2</span>
+                <div>
+                  <div class="fw-semibold small">Choose Policy Type &amp; Target Config File(s)</div>
+                  <div class="text-body-secondary" style="font-size: 0.75rem;">Pick a starter preset (such as <em>Balanced Enterprise</em>) and check the files to generate.</div>
+                </div>
+              </div>
+              <div class="guide-step-item">
+                <span id="guide-dot-3" class="guide-step-dot">3</span>
+                <div>
+                  <div class="fw-semibold small">Inspect Paths, Edit Two-Way &amp; Download</div>
+                  <div class="text-body-secondary" style="font-size: 0.75rem;">Review target paths and lock commands on the left while editing &amp; validating live here.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 pt-1">
+              <button type="button" class="btn btn-sm btn-outline-primary fw-medium" data-bs-toggle="modal" data-bs-target="#importModal">
+                Import / Validate Existing File
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active File Live Code Editor & Real-Time Validation Workspace -->
+        <div id="right-editor-workspace" class="right-editor-workspace d-none">
+          <div class="editor-header">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <span id="active-file-title" class="fw-semibold mono-input" style="font-size: 0.86rem;">admin_settings.json</span>
+                <span id="sync-status-pill" class="badge text-bg-light border fw-normal" style="font-size: 0.7rem;">Two-Way Synced</span>
+                <span id="global-validation-badge" class="badge rounded-pill status-badge-pass px-2 py-1" style="font-size: 0.72rem;">PASS &middot; 0 Issues</span>
+                <button id="btn-fix-all" type="button" class="btn btn-sm btn-warning py-0 px-2 fw-semibold d-none" style="font-size: 0.73rem; height: 24px;">
+                  Auto-Fix All
+                </button>
+              </div>
+
+              <div class="d-flex align-items-center gap-1">
+                <button id="btn-format-code" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.75rem; height: 26px;">Format</button>
+                <button id="btn-copy-code" type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.75rem; height: 26px;">Copy</button>
+                <button id="btn-download-single" type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-semibold" style="font-size: 0.75rem; height: 26px;">Download File</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Code Editor with Synchronized Gutter -->
+          <div class="editor-container">
+            <div id="editor-gutter" class="editor-gutter" aria-hidden="true">1</div>
+            <label for="code-editor" class="visually-hidden">Raw Configuration Editor</label>
+            <textarea id="code-editor" class="editor-textarea" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
+
+          <!-- Real-Time Validation Drawer -->
+          <div class="drawer-tabs">
+            <div class="d-flex align-items-center gap-2">
+              <span class="fw-semibold" style="font-size: 0.78rem;">Real-Time Validation</span>
+              <span id="drawer-issue-count" class="badge text-bg-secondary" style="font-size: 0.7rem;">0</span>
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+              <label for="select-validation-scope" class="visually-hidden">Validation Issue Scope</label>
+              <select id="select-validation-scope" class="form-select form-select-sm py-0" style="font-size: 0.74rem; height: 26px; width: auto;">
+                <option value="active" selected>Active File Issues</option>
+                <option value="all">All Selected Files</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="drawer-content" class="drawer-body">
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Multi-Mode Import & Standalone Validator Modal -->
+  <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header py-2 px-3">
+          <h2 class="modal-title fs-6 fw-semibold" id="importModalLabel">Import &amp; Validate Existing Configuration</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-3">
+          <ul class="nav nav-pills nav-fill gap-2 mb-3" id="importModeTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active py-1" id="upload-tab" data-bs-toggle="tab" data-bs-target="#pane-upload" type="button" role="tab" style="font-size: 0.82rem;">
+                Upload Files or .zip Bundle
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link py-1" id="paste-tab" data-bs-toggle="tab" data-bs-target="#pane-paste" type="button" role="tab" style="font-size: 0.82rem;">
+                Paste Raw Config / Validate Only
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link py-1" id="repo-tab" data-bs-toggle="tab" data-bs-target="#pane-repo" type="button" role="tab" style="font-size: 0.82rem;">
+                Load Repo Baseline
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content">
+            <!-- Tab 1: Drag & Drop File / ZIP Upload -->
+            <div class="tab-pane fade show active" id="pane-upload" role="tabpanel">
+              <div id="import-dropzone" class="import-dropzone mb-2">
+                <div class="fw-semibold mb-1">Drop canonical Antigravity file(s) or an MDM .zip bundle here</div>
+                <div class="text-body-secondary" style="font-size: 0.78rem;">
+                  Supports <code>admin_settings.json</code>, <code>.env</code>, <code>settings.json</code>, <code>config.json</code>, <code>browserAllowlist.txt</code>, <code>mcp_config.json</code>, <code>hooks.json</code>, <code>.sh</code>, <code>.ps1</code>, <code>acp.json</code>, or <code>.zip</code>
+                </div>
+                <input id="input-import-files" type="file" class="d-none" multiple accept=".json,.env,.txt,.sh,.ps1,.zip">
+                <button id="btn-browse-files" type="button" class="btn btn-sm btn-outline-primary mt-2">Choose Files</button>
+              </div>
+              <div id="upload-selection-summary" class="small text-body-secondary"></div>
+            </div>
+
+            <!-- Tab 2: Paste Raw Config -->
+            <div class="tab-pane fade" id="pane-paste" role="tabpanel">
+              <div class="row g-2 mb-2">
+                <div class="col-sm-6">
+                  <label for="paste-file-type" class="form-label-sm">Target Config Type (or Auto-Detect)</label>
+                  <select id="paste-file-type" class="form-select form-select-sm">
+                    <option value="">Auto-detect from content</option>
+                    <option value="admin_settings">01 &middot; admin_settings.json</option>
+                    <option value="gateway_env">01b &middot; antigravity-gateway.env</option>
+                    <option value="cli_settings">02 &middot; settings.json (CLI)</option>
+                    <option value="desktop_config">03 &middot; config.json (Desktop/Hub)</option>
+                    <option value="browser_allowlist">04 &middot; browserAllowlist.txt</option>
+                    <option value="mcp_config">05 &middot; mcp_config.json</option>
+                    <option value="hooks_config">06 &middot; hooks.json</option>
+                    <option value="guard_sh">07a &middot; agy_security_guard.sh</option>
+                    <option value="guard_ps1">07b &middot; agy_security_guard.ps1</option>
+                    <option value="acp_json">08a &middot; acp.json</option>
+                    <option value="acp_auth">08b &middot; antigravity-acp/settings.json</option>
+                  </select>
+                </div>
+              </div>
+              <label for="paste-raw-textarea" class="form-label-sm">Raw JSON / .env / Hook Script</label>
+              <textarea id="paste-raw-textarea" class="form-control mono-input" rows="8" placeholder="Paste existing configuration content here to validate or import into the studio"></textarea>
+              <div class="d-flex justify-content-between align-items-center mt-2">
+                <button id="btn-validate-paste-only" type="button" class="btn btn-sm btn-outline-secondary">Validate Without Importing</button>
+                <button id="btn-import-paste" type="button" class="btn btn-sm btn-primary">Import Into Studio</button>
+              </div>
+              <div id="standalone-validation-output" class="mt-2"></div>
+            </div>
+
+            <!-- Tab 3: Sibling Repo Baseline -->
+            <div class="tab-pane fade" id="pane-repo" role="tabpanel">
+              <div class="p-3 border rounded bg-body-tertiary">
+                <div class="fw-semibold mb-1">Load Canonical 8-Module Baseline (<code>../agy-config/configs/</code>)</div>
+                <p class="small text-body-secondary mb-2">
+                  Imports all 8 live-validated enterprise policy modules (including the full 595-rule CLI &amp; Desktop allow/ask/deny set, MCP catalog, guard scripts, and ACP configs) directly into the studio with your current workstation username.
+                </p>
+                <button id="btn-import-repo-baseline" type="button" class="btn btn-sm btn-primary">Load Repository Baseline Now</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Requirements, Versions & File Reference Pop-Up Modal -->
+  <div class="modal fade" id="referenceGuideModal" tabindex="-1" aria-labelledby="referenceGuideModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable studio-ref-modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header py-2 px-3">
+          <div>
+            <h2 class="modal-title fs-6 fw-semibold" id="referenceGuideModalLabel">Antigravity Enterprise Requirements, Versions &amp; Configuration File Reference</h2>
+            <div class="text-body-secondary" style="font-size: 0.74rem;">Official OS prerequisites, minimum client/ACP versions, mandatory file matrix, admin lock CLI commands &amp; public documentation</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="px-3 py-2 border-bottom bg-body-tertiary d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <label for="select-ref-section" class="form-label-sm mb-0">Show Section</label>
+            <select id="select-ref-section" class="form-select form-select-sm" style="width: auto; min-width: 265px;">
+              <option value="all" selected>All Reference Tables (1 &ndash; 3)</option>
+              <option value="os">1. Minimum OS Requirements (Win / Mac / Linux)</option>
+              <option value="versions">2. Minimum Antigravity Versions (CLI / Desktop / Web / IDEs)</option>
+              <option value="files">3. Configuration Files, Mandatory Status &amp; Admin CLI</option>
+            </select>
+          </div>
+
+          <div class="d-flex align-items-center gap-2">
+            <label for="select-ref-cli-os" class="form-label-sm mb-0">Table 3 Target OS &amp; Admin CLI</label>
+            <select id="select-ref-cli-os" class="form-select form-select-sm" style="width: auto; min-width: 225px;">
+              <option value="linux" selected>Linux (chmod + chattr +i)</option>
+              <option value="macos">macOS (chmod + chflags schg)</option>
+              <option value="windows">Windows (BOM-free + attrib + icacls)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-body p-3">
+          <!-- Table 1: Minimum OS Requirements -->
+          <section id="ref-sec-os" class="mb-4">
+            <div class="ref-section-title">1. Minimum Operating System Requirements (Windows, macOS &amp; Linux)</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle studio-ref-table mb-0">
+                <thead>
+                  <tr>
+                    <th style="width: 11%;">OS</th>
+                    <th style="width: 27%;">Minimum OS Version</th>
+                    <th style="width: 20%;">Supported Architectures</th>
+                    <th style="width: 20%;">Hardware &amp; Runtime</th>
+                    <th style="width: 22%;">Sandbox &amp; MDM Lock Mechanism</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-ref-os">
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Table 2: Minimum Antigravity Versions -->
+          <section id="ref-sec-versions" class="mb-4">
+            <div class="ref-section-title">2. Minimum Antigravity Client &amp; Surface Versions (Enterprise Gateway)</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle studio-ref-table mb-0">
+                <thead>
+                  <tr>
+                    <th style="width: 19%;">Antigravity Surface</th>
+                    <th style="width: 17%;">Minimum Version</th>
+                    <th style="width: 22%;">Platforms &amp; Wire Protocols</th>
+                    <th style="width: 31%;">Enterprise Gateway &amp; Auth Notes</th>
+                    <th style="width: 11%;">Public Docs</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-ref-versions">
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Table 3: Configuration Files, Purpose, Is Mandatory, Admin CLI & Public Docs -->
+          <section id="ref-sec-files">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+              <div class="ref-section-title mb-0">3. Canonical Configuration Files, Mandatory Status, Admin Permission CLI &amp; Public Docs</div>
+              <span id="ref-files-user-caption" class="text-body-secondary" style="font-size: 0.74rem;"></span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-top studio-ref-table mb-0">
+                <thead>
+                  <tr>
+                    <th style="width: 21%;">File &amp; Target Path</th>
+                    <th style="width: 12%;">Surfaces</th>
+                    <th style="width: 20%;">Purpose</th>
+                    <th style="width: 13%;">Is Mandatory?</th>
+                    <th style="width: 25%;">CLI Command to Set Permission as Admin</th>
+                    <th style="width: 9%;">Public Docs</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-ref-files">
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Subtle Notification Toast -->
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="studio-toast" class="toast align-items-center border-0" role="status" aria-live="polite" aria-atomic="true">
+      <div class="d-flex">
+        <div id="studio-toast-body" class="toast-body small fw-medium"></div>
+        <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+  </div>
+
+  <script id="studio-bootstrap-data" type="application/json">{{ bootstrap_json | safe }}</script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ url_for('static', filename='js/studio.js') }}"></script>
+</body>
+</html>

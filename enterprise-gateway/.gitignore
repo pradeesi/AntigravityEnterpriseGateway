@@ -1,0 +1,78 @@
+# ==============================================================================
+# FILE HEADER: Git Ignore Rules — Antigravity Enterprise Gateway
+# ==============================================================================
+# Purpose:
+#   Prevents credentials, local environment overrides, generated client configs,
+#   language build/dependency artifacts, and OS/IDE noise from being committed.
+#
+# Architecture / Context:
+#   Applies across the unified `enterprise-gateway/` directory covering both
+#   Go (`go/`) and Python (`python/`) runtimes as well as `model-armor-sdp/`.
+#   Note: `settings.env` and `.env.example` contain non-sensitive defaults and
+#   templates and are intentionally tracked in version control.
+#
+# Dependencies / Side Effects:
+#   Enforced automatically by Git on `git status`, `git add`, and `git commit`.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# BLOCK 1: Secrets, Credentials & Local Environment Overrides
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+admin_settings.local.json
+*.local.json
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+*credentials*.json
+*service-account*.json
+*secret*.json
+
+# ------------------------------------------------------------------------------
+# BLOCK 2: Go Build & Test Artifacts
+# ------------------------------------------------------------------------------
+go/gateway
+go/antigravity-gateway
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.txt
+
+# ------------------------------------------------------------------------------
+# BLOCK 3: Python Virtual Environments & Bytecode Caches
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# ------------------------------------------------------------------------------
+# BLOCK 4: OS & Editor / IDE Noise
+# ------------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
