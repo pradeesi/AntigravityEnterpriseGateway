@@ -674,4 +674,291 @@ def test_airgapped_local_assets_and_csp(client) -> None:
         assert required_pkg in wheel_names, f"Missing {required_pkg} in offline vendor/wheels/"
 
 
+def test_symmetric_two_way_sync_all_eleven_files_and_deletions(client) -> None:
+    """Verify lossless symmetric Form <-> Code round-trips and deletions across all 11 files.
+
+    Summary:
+        Exercises `POST /api/sync-code` followed by `POST /api/compile` across all
+        11 canonical files, explicitly testing key/item deletions, nested custom
+        JSON keys, apostrophes in SessionStart banners, custom `.env` lines, and
+        ACP Gateway environment propagation.
+    Parameters:
+        client: Flask test client fixture.
+    Return Value:
+        None.
+    Exceptions/Errors:
+        AssertionError: Raised if any edit reverts or fails to round-trip cleanly.
+    """
+    init = client.post("/api/preset", json={"preset_id": "balanced", "dev_user": "alice"}).get_json()
+    state = init["state"]
+
+    # 1. admin_settings: delete customHeaders & models.list, clear defaultModelId, add nested custom key
+    admin_raw = json.dumps(
+        {
+            "caCertPath": "/etc/antigravity/custom-ca.pem",
+            "gateway": {
+                "enabled": True,
+                "url": "https://gw-sync.corp.example.com",
+                "wireProtocol": "openai",
+                "customEnterpriseFlag": True,
+            },
+            "models": {"defaultModelId": "", "list": []},
+        },
+        indent=2,
+    )
+    r1 = client.post("/api/sync-code", json={"file_id": "admin_settings", "content": admin_raw, "state": state}).get_json()
+    assert r1["code_synced"] is True
+    state = r1["state"]
+    assert state["gateway"]["omitApiKeyInMdm"] is True
+    assert state["gateway"]["customHeaders"] == []
+    assert state["gateway"]["models"] == []
+    assert state["gateway"]["defaultModelId"] == ""
+    assert state["gateway_env"]["url"] == "https://gw-sync.corp.example.com"
+    assert state["gateway_env"]["wireProtocol"] == "openai"
+
+    recompiled_admin = json.loads(
+        client.post("/api/compile", json={"state": state}).get_json()["files"]["admin_settings"]
+    )
+    assert "customHeaders" not in recompiled_admin["gateway"]
+    assert recompiled_admin["gateway"]["customEnterpriseFlag"] is True
+    assert recompiled_admin["models"] == {"defaultModelId": "", "list": []}
+
+    # 2. gateway_env: remove CA_CERT & HEADERS, toggle off `export `, preserve custom extra env line
+    env_raw = (
+        'AGY_LLM_GATEWAY_URL="https://env-gw.corp.example.com"\n'
+        'AGY_LLM_GATEWAY_API_KEY="sk-test-placeholder"\n'
+        'AGY_LLM_GATEWAY_WIRE_PROTOCOL="genai"\n'
+        "# AGY_LLM_GATEWAY_CA_CERT=/commented/out.pem\n"
+        'CUSTOM_CORP_REGION="europe-west1"\n'
+    )
+    r2 = client.post("/api/sync-code", json={"file_id": "gateway_env", "content": env_raw, "state": state}).get_json()
+    assert r2["code_synced"] is True
+    state = r2["state"]
+    assert state["gateway_env"]["exportPrefix"] is False
+    assert state["gateway_env"]["caCert"] == ""
+    assert state["gateway_env"]["headers"] == ""
+    assert state["gateway_env"]["models"] == ""
+    recompiled_env = client.post("/api/compile", json={"state": state}).get_json()["files"]["gateway_env"]
+    assert "AGY_LLM_GATEWAY_CA_CERT=" not in recompiled_env
+    assert 'CUSTOM_CORP_REGION="europe-west1"' in recompiled_env
+
+    # 3. cli_settings: set historySize + UI suppression, then delete them and verify they stay deleted
+    cli_with_ui = json.loads(r2["files"]["cli_settings"])
+    cli_with_ui["historySize"] = 0
+    cli_with_ui["notifications"] = False
+    cli_with_ui["showFeedbackSurvey"] = False
+    cli_with_ui["showTips"] = True
+    cli_with_ui["sandboxProxy"] = {
+        "http": {
+            "address": "http://proxy.corp.example.com:3128",
+            "certFile": "/etc/antigravity/certs/root.pem",
+            "noProxy": "localhost,127.0.0.1",
+        }
+    }
+    r3a = client.post(
+        "/api/sync-code",
+        json={"file_id": "cli_settings", "content": json.dumps(cli_with_ui), "state": state},
+    ).get_json()
+    assert r3a["code_synced"] is True
+    state = r3a["state"]
+    assert state["cli"]["includeOptionalUiKeys"] is True
+    assert state["cli"]["historySize"] == 0
+    assert state["cli"]["showTips"] is True
+
+    del cli_with_ui["historySize"]
+    del cli_with_ui["notifications"]
+    del cli_with_ui["showFeedbackSurvey"]
+    del cli_with_ui["showTips"]
+    r3b = client.post(
+        "/api/sync-code",
+        json={"file_id": "cli_settings", "content": json.dumps(cli_with_ui), "state": state},
+    ).get_json()
+    state = r3b["state"]
+    assert state["cli"]["includeOptionalUiKeys"] is False
+    assert state["cli"]["historySize"] == 50
+    recompiled_cli = json.loads(client.post("/api/compile", json={"state": state}).get_json()["files"]["cli_settings"])
+    assert "historySize" not in recompiled_cli
+    assert "notifications" not in recompiled_cli
+    assert recompiled_cli["sandboxProxy"]["http"]["noProxy"] == "localhost,127.0.0.1"
+
+    # 4. desktop_config: add nonWorkspaceFileAccessPolicy & internetAccessPolicy, then delete them
+    desk_doc = json.loads(r3b["files"]["desktop_config"])
+    desk_doc["userSettings"]["nonWorkspaceFileAccessPolicy"] = "NON_WORKSPACE_FILE_ACCESS_POLICY_DISABLED"
+    desk_doc["userSettings"]["internetAccessPolicy"] = "INTERNET_ACCESS_POLICY_DISABLED"
+    desk_doc["userSettings"]["customDesktopFlag"] = "enabled"
+    r4a = client.post(
+        "/api/sync-code",
+        json={"file_id": "desktop_config", "content": json.dumps(desk_doc), "state": state},
+    ).get_json()
+    state = r4a["state"]
+    assert state["desktop"]["nonWorkspaceFileAccessPolicy"] == "NON_WORKSPACE_FILE_ACCESS_POLICY_DISABLED"
+    assert state["desktop"]["internetAccessPolicy"] == "INTERNET_ACCESS_POLICY_DISABLED"
+
+    del desk_doc["userSettings"]["nonWorkspaceFileAccessPolicy"]
+    del desk_doc["userSettings"]["internetAccessPolicy"]
+    r4b = client.post(
+        "/api/sync-code",
+        json={"file_id": "desktop_config", "content": json.dumps(desk_doc), "state": state},
+    ).get_json()
+    state = r4b["state"]
+    assert state["desktop"]["nonWorkspaceFileAccessPolicy"] == ""
+    assert state["desktop"]["internetAccessPolicy"] == ""
+    recompiled_desk = json.loads(
+        client.post("/api/compile", json={"state": state}).get_json()["files"]["desktop_config"]
+    )
+    assert "nonWorkspaceFileAccessPolicy" not in recompiled_desk["userSettings"]
+    assert recompiled_desk["userSettings"]["customDesktopFlag"] == "enabled"
+
+    # 5. browser_allowlist: edit domain list including comments
+    r5 = client.post(
+        "/api/sync-code",
+        json={
+            "file_id": "browser_allowlist",
+            "content": "# Header\nportal.internal.example.com\ngit.internal.example.com\n",
+            "state": state,
+        },
+    ).get_json()
+    assert r5["code_synced"] is True
+    state = r5["state"]
+    assert state["browser_domains"] == ["portal.internal.example.com", "git.internal.example.com"]
+
+    # 6. mcp_config: omit timeoutSeconds and preserve custom per-server headers
+    mcp_doc = {
+        "mcpServers": {
+            "corp_api": {
+                "serverUrl": "https://mcp.corp.example.com/sse",
+                "disabled": True,
+                "enabledTools": ["get_status"],
+                "disabledTools": ["drop_db"],
+                "headers": {"X-MCP-Tenant": "secops"},
+            }
+        }
+    }
+    r6 = client.post(
+        "/api/sync-code",
+        json={"file_id": "mcp_config", "content": json.dumps(mcp_doc), "state": state},
+    ).get_json()
+    assert r6["code_synced"] is True
+    state = r6["state"]
+    assert state["mcp_servers"][0]["timeoutSeconds"] is None
+    recompiled_mcp = json.loads(client.post("/api/compile", json={"state": state}).get_json()["files"]["mcp_config"])
+    assert "timeoutSeconds" not in recompiled_mcp["mcpServers"]["corp_api"]
+    assert recompiled_mcp["mcpServers"]["corp_api"]["headers"] == {"X-MCP-Tenant": "secops"}
+
+    # 7. hooks_config: round-trip SessionStart banner containing apostrophes + custom Stop hook
+    state["hooks"]["enableSessionStartBanner"] = True
+    state["hooks"]["sessionBannerText"] = "Admin's strict policy: do not exfiltrate secrets."
+    compiled_hooks = client.post("/api/compile", json={"state": state}).get_json()["files"]["hooks_config"]
+    hooks_obj = json.loads(compiled_hooks)
+    hooks_obj["hooks"]["Stop"] = [{"matcher": ".*", "hooks": [{"type": "command", "command": "/bin/true"}]}]
+    r7 = client.post(
+        "/api/sync-code",
+        json={"file_id": "hooks_config", "content": json.dumps(hooks_obj), "state": state},
+    ).get_json()
+    assert r7["code_synced"] is True
+    state = r7["state"]
+    assert state["hooks"]["sessionBannerText"] == "Admin's strict policy: do not exfiltrate secrets."
+    recompiled_hooks = json.loads(
+        client.post("/api/compile", json={"state": state}).get_json()["files"]["hooks_config"]
+    )
+    assert "Stop" in recompiled_hooks["hooks"]
+
+    # 8 & 9. guard_sh and guard_ps1 script round-trips
+    for script_fid, marker in (("guard_sh", "# CUSTOM_BASH_MARKER"), ("guard_ps1", "# CUSTOM_PS1_MARKER")):
+        custom_script = state["scripts"][script_fid] + f"\n{marker}\n"
+        rs = client.post(
+            "/api/sync-code",
+            json={"file_id": script_fid, "content": custom_script, "state": state},
+        ).get_json()
+        assert rs["code_synced"] is True
+        state = rs["state"]
+        assert marker in client.post("/api/compile", json={"state": state}).get_json()["files"][script_fid]
+
+    # 10 & 11. acp_json (all 6 env vars + extraEnv) and acp_auth
+    acp_doc = {
+        "agent_servers": {
+            "Antigravity": {
+                "command": "/opt/antigravity/bin/agy",
+                "args": ["acp", "--verbose"],
+                "env": {
+                    "AGY_LLM_GATEWAY_URL": "https://acp-gw.corp.example.com",
+                    "AGY_LLM_GATEWAY_API_KEY": "REPLACE_ACP_KEY",
+                    "AGY_LLM_GATEWAY_WIRE_PROTOCOL": "genai",
+                    "AGY_LLM_GATEWAY_CA_CERT": "/etc/ssl/corp.pem",
+                    "AGY_LLM_GATEWAY_HEADERS": "X-Team: IDE,X-Env: Prod",
+                    "AGY_LLM_GATEWAY_MODELS": "gemini-3.8-flash,gemini-3.1-pro-preview",
+                    "ACP_CUSTOM_TRACE": "1",
+                },
+            }
+        }
+    }
+    r10 = client.post(
+        "/api/sync-code",
+        json={"file_id": "acp_json", "content": json.dumps(acp_doc), "state": state},
+    ).get_json()
+    assert r10["code_synced"] is True
+    state = r10["state"]
+    assert state["acp"]["command"] == "/opt/antigravity/bin/agy"
+    assert state["acp"]["args"] == ["acp", "--verbose"]
+    assert state["gateway"]["url"] == "https://acp-gw.corp.example.com"
+    recompiled_acp = json.loads(client.post("/api/compile", json={"state": state}).get_json()["files"]["acp_json"])
+    assert recompiled_acp["agent_servers"]["Antigravity"]["env"]["ACP_CUSTOM_TRACE"] == "1"
+    assert recompiled_acp["agent_servers"]["Antigravity"]["env"]["AGY_LLM_GATEWAY_HEADERS"] == "X-Team: IDE,X-Env: Prod"
+
+    r11 = client.post(
+        "/api/sync-code",
+        json={"file_id": "acp_auth", "content": json.dumps({"auth": {"type": "oauth"}}), "state": state},
+    ).get_json()
+    assert r11["code_synced"] is True
+    assert r11["state"]["acp"]["authType"] == "oauth"
+    assert any(i["code"] == "ERR_ACP_AUTH_TYPE" for i in r11["validation"]["issues_by_file"]["acp_auth"])
+
+
+def test_sync_code_reports_false_on_malformed_json_and_recovers(client) -> None:
+    """Verify `/api/sync-code` flags malformed JSON via `code_synced: False` without corrupting state.
+
+    Summary:
+        Ensures mid-keystroke JSON syntax errors return `code_synced: False` plus
+        `ERR_JSON_SYNTAX` while preserving structured state, and immediately return
+        `code_synced: True` once valid JSON syntax is restored, alongside cache-busting
+        `?v=` asset URLs and clean `204`/`404` HTTP responses.
+    Parameters:
+        client: Flask test client fixture.
+    Return Value:
+        None.
+    Exceptions/Errors:
+        AssertionError: Raised if malformed JSON claims `code_synced: True` or 404 returns 500.
+    """
+    init = client.post("/api/preset", json={"preset_id": "balanced"}).get_json()
+    state = init["state"]
+
+    bad_resp = client.post(
+        "/api/sync-code",
+        json={"file_id": "cli_settings", "content": '{"agentMode": "strict",}', "state": state},
+    )
+    assert bad_resp.status_code == 200
+    bad_data = bad_resp.get_json()
+    assert bad_data["code_synced"] is False
+    assert bad_data["state"]["cli"]["agentMode"] == "plan"
+    assert any(i["code"] == "ERR_JSON_SYNTAX" for i in bad_data["validation"]["issues_by_file"]["cli_settings"])
+
+    good_resp = client.post(
+        "/api/sync-code",
+        json={"file_id": "cli_settings", "content": '{"agentMode": "accept-edits"}', "state": bad_data["state"]},
+    )
+    good_data = good_resp.get_json()
+    assert good_data["code_synced"] is True
+    assert good_data["state"]["cli"]["agentMode"] == "accept-edits"
+
+    # Verify cache-busting asset query string, Cache-Control header, favicon 204, and real 404
+    index_resp = client.get("/")
+    index_html = index_resp.get_data(as_text=True)
+    assert "studio.js?v=" in index_html
+    assert "studio.css?v=" in index_html
+    assert "no-cache" in index_resp.headers.get("Cache-Control", "")
+    assert client.get("/favicon.ico").status_code == 204
+    assert client.get("/non-existent-endpoint").status_code == 404
+
+
+
 

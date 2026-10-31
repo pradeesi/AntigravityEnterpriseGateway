@@ -1148,13 +1148,16 @@ def _merge_extra_keys(base_obj: dict[str, Any], extra_obj: dict[str, Any] | None
     """Overlay preserved custom/unknown JSON keys onto a rendered config dict.
 
     Summary:
-        Ensures any custom JSON properties imported or typed by an administrator
-        in the raw code editor survive round-trip visual form edits.
+        Recursively merges unknown/custom JSON properties imported or typed by
+        an administrator in the raw code editor so nested custom fields (for
+        example under `gateway`, `models`, `userSettings`, `mcpServers.<name>`,
+        `hooks`, or `agent_servers.Antigravity`) survive visual form edits.
     Parameters:
         base_obj (dict[str, Any]): Newly compiled canonical JSON object.
         extra_obj (dict[str, Any] | None): Previously preserved unknown keys.
     Return Value:
-        dict[str, Any]: Merged dictionary.
+        dict[str, Any]: Deep-merged dictionary with canonical keys taking
+        precedence over stale custom keys at each dictionary level.
     Exceptions/Errors:
         None.
     """
@@ -1163,12 +1166,57 @@ def _merge_extra_keys(base_obj: dict[str, Any], extra_obj: dict[str, Any] | None
     merged = copy.deepcopy(extra_obj)
     for k, v in base_obj.items():
         if isinstance(v, dict) and isinstance(merged.get(k), dict):
-            nested = copy.deepcopy(merged[k])
-            nested.update(v)
-            merged[k] = nested
+            merged[k] = _merge_extra_keys(v, merged[k])
         else:
-            merged[k] = v
+            merged[k] = copy.deepcopy(v)
     return merged
+
+
+def _extract_session_banner_text(sess_arr: Any, fallback: str) -> str:
+    """Extract `ephemeralMessage` text from a `SessionStart` hook array.
+
+    Summary:
+        Parses `hooks.SessionStart[0].hooks[0].command` (such as
+        `printf '%s\\n' '{"injectSteps": [{"ephemeralMessage": "..."}]}'`) back
+        into `hooks.sessionBannerText` so raw `hooks.json` edits sync cleanly
+        to the Left-Pane Compliance Banner input.
+    Parameters:
+        sess_arr (Any): Parsed `hooks.SessionStart` JSON value.
+        fallback (str): Previous `sessionBannerText` fallback if unparseable.
+    Return Value:
+        str: Extracted banner string or `fallback`.
+    Exceptions/Errors:
+        None.
+    """
+    if not (isinstance(sess_arr, list) and sess_arr and isinstance(sess_arr[0], dict)):
+        return fallback
+    inner_hooks = sess_arr[0].get("hooks")
+    if not (isinstance(inner_hooks, list) and inner_hooks and isinstance(inner_hooks[0], dict)):
+        return fallback
+    cmd = str(inner_hooks[0].get("command", ""))
+    if not cmd:
+        return fallback
+
+    # Try single-quoted printf payload first (unescaping POSIX '\'' sequences)
+    sq_match = re.search(r"printf\s+(?:'%s\\n'|\"%s\\n\")\s+'(.*)'\s*$", cmd, flags=re.DOTALL)
+    candidate_json = sq_match.group(1).replace("'\\''", "'") if sq_match else ""
+    if candidate_json:
+        try:
+            payload_obj = json.loads(candidate_json)
+            steps = payload_obj.get("injectSteps") if isinstance(payload_obj, dict) else None
+            if isinstance(steps, list) and steps and isinstance(steps[0], dict) and "ephemeralMessage" in steps[0]:
+                return str(steps[0]["ephemeralMessage"])
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback regex extraction if user formatted the echo/printf command differently
+    msg_match = re.search(r'"ephemeralMessage"\s*:\s*"((?:\\.|[^"\\])*)"', cmd)
+    if msg_match:
+        try:
+            return str(json.loads(f'"{msg_match.group(1)}"'))
+        except json.JSONDecodeError:
+            return msg_match.group(1)
+    return fallback
 
 
 def render_single_file(file_id: str, state: dict[str, Any]) -> str:
@@ -1177,7 +1225,7 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
     Summary:
         Renders deterministic, BOM-free UTF-8 output for `file_id`, applying
         cross-surface permission sync (`sync_permissions`) and merging any
-        preserved custom JSON keys.
+        preserved custom JSON keys or extra `.env` entries.
     Parameters:
         file_id (str): Canonical studio file identifier.
         state (dict[str, Any]): Current structured studio state.
@@ -1224,8 +1272,10 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
         if ca_path:
             doc["caCertPath"] = ca_path
         doc["gateway"] = gw_block
+        raw_default_model = gw.get("defaultModelId")
+        default_model_str = "gemini-3.8-flash" if raw_default_model is None else str(raw_default_model).strip()
         doc["models"] = {
-            "defaultModelId": str(gw.get("defaultModelId", "gemini-3.8-flash")).strip(),
+            "defaultModelId": default_model_str,
             "list": models_list,
         }
         doc = _merge_extra_keys(doc, extra_all.get("admin_settings"))
@@ -1240,7 +1290,7 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
             "# ==============================================================================",
             f'{pfx}AGY_LLM_GATEWAY_URL="{env_cfg.get("url", "")}"',
             f'{pfx}AGY_LLM_GATEWAY_API_KEY="{env_cfg.get("apiKey", "")}"',
-            f'{pfx}AGY_LLM_GATEWAY_WIRE_PROTOCOL="{env_cfg.get("wireProtocol", "genai")}"',
+            f'{pfx}AGY_LLM_GATEWAY_WIRE_PROTOCOL="{env_cfg.get("wireProtocol", "genai") or "genai"}"',
         ]
         if str(env_cfg.get("caCert", "")).strip():
             lines.append(f'{pfx}AGY_LLM_GATEWAY_CA_CERT="{env_cfg.get("caCert", "").strip()}"')
@@ -1248,6 +1298,9 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
             lines.append(f'{pfx}AGY_LLM_GATEWAY_HEADERS="{env_cfg.get("headers", "").strip()}"')
         if str(env_cfg.get("models", "")).strip():
             lines.append(f'{pfx}AGY_LLM_GATEWAY_MODELS="{env_cfg.get("models", "").strip()}"')
+        for extra_ln in env_cfg.get("extraLines", []):
+            if str(extra_ln).strip():
+                lines.append(str(extra_ln).strip())
         return "\n".join(lines) + "\n"
 
     if file_id == "cli_settings":
@@ -1331,14 +1384,18 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
             if not isinstance(srv, dict) or not str(srv.get("name", "")).strip():
                 continue
             name = str(srv["name"]).strip()
-            entry_cfg: dict[str, Any] = {}
+            entry_cfg: dict[str, Any] = copy.deepcopy(srv["extra"]) if isinstance(srv.get("extra"), dict) else {}
             if srv.get("transport") == "http" or str(srv.get("serverUrl", "")).strip():
+                entry_cfg.pop("command", None)
+                entry_cfg.pop("args", None)
                 entry_cfg["serverUrl"] = str(srv.get("serverUrl", "")).strip()
             else:
+                entry_cfg.pop("serverUrl", None)
+                entry_cfg.pop("url", None)
                 entry_cfg["command"] = str(srv.get("command", "")).strip()
                 entry_cfg["args"] = [str(a) for a in srv.get("args", []) if str(a).strip()]
             entry_cfg["disabled"] = bool(srv.get("disabled", True))
-            if srv.get("timeoutSeconds"):
+            if srv.get("timeoutSeconds") is not None and srv.get("timeoutSeconds") != "":
                 entry_cfg["timeoutSeconds"] = int(srv["timeoutSeconds"])
             if "enabledTools" in srv and isinstance(srv["enabledTools"], list):
                 entry_cfg["enabledTools"] = [str(t).strip() for t in srv["enabledTools"] if str(t).strip()]
@@ -1358,13 +1415,15 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
         if hooks_cfg.get("enableSessionStartBanner", False):
             banner_msg = str(hooks_cfg.get("sessionBannerText", "")).strip()
             banner_payload = json.dumps({"injectSteps": [{"ephemeralMessage": banner_msg}]})
+            # Escape single quotes using standard POSIX '\'' idiom so apostrophes in banners never break bash/sh
+            safe_banner_payload = banner_payload.replace("'", "'\\''")
             hooks_map["SessionStart"] = [
                 {
                     "matcher": ".*",
                     "hooks": [
                         {
                             "type": "command",
-                            "command": f"printf '%s\\n' '{banner_payload}'",
+                            "command": f"printf '%s\\n' '{safe_banner_payload}'",
                             "timeout": 5,
                         }
                     ],
@@ -1416,11 +1475,15 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
             for m in gw.get("models", [])
             if isinstance(m, dict) and str(m.get("modelId", "")).strip()
         )
-        acp_env: dict[str, str] = {
-            "AGY_LLM_GATEWAY_URL": str(gw.get("url", "https://REPLACE_WITH_GATEWAY_URL")).strip(),
-            "AGY_LLM_GATEWAY_API_KEY": str(gw.get("apiKey") or env_cfg.get("apiKey") or "REPLACE_WITH_GATEWAY_API_KEY").strip(),
-            "AGY_LLM_GATEWAY_WIRE_PROTOCOL": str(gw.get("wireProtocol", "genai")).strip() or "genai",
-        }
+        acp_env: dict[str, str] = {}
+        if isinstance(acp_cfg.get("extraEnv"), dict):
+            for ek, ev in acp_cfg["extraEnv"].items():
+                acp_env[str(ek)] = str(ev)
+        acp_env["AGY_LLM_GATEWAY_URL"] = str(gw.get("url", "https://REPLACE_WITH_GATEWAY_URL")).strip()
+        acp_env["AGY_LLM_GATEWAY_API_KEY"] = str(
+            gw.get("apiKey") or env_cfg.get("apiKey") or "REPLACE_WITH_GATEWAY_API_KEY"
+        ).strip()
+        acp_env["AGY_LLM_GATEWAY_WIRE_PROTOCOL"] = str(gw.get("wireProtocol", "genai")).strip() or "genai"
         if str(gw.get("caCertPath", "")).strip():
             acp_env["AGY_LLM_GATEWAY_CA_CERT"] = str(gw.get("caCertPath", "")).strip()
         if headers_kv:
@@ -1428,11 +1491,17 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
         if models_csv:
             acp_env["AGY_LLM_GATEWAY_MODELS"] = models_csv
 
+        raw_args = acp_cfg.get("args")
+        acp_args = (
+            [str(a) for a in raw_args if str(a).strip()]
+            if isinstance(raw_args, list)
+            else ["acp"]
+        )
         doc = {
             "agent_servers": {
                 "Antigravity": {
                     "command": str(acp_cfg.get("command", "/usr/local/bin/agy")).strip(),
-                    "args": [str(a) for a in acp_cfg.get("args", ["acp"]) if str(a).strip()] or ["acp"],
+                    "args": acp_args,
                     "env": acp_env,
                 }
             }
@@ -1451,24 +1520,28 @@ def render_single_file(file_id: str, state: dict[str, Any]) -> str:
 # ==============================================================================
 # BLOCK 4: TWO-WAY PARSER (RAW CODE / IMPORT -> STRUCTURED STATE)
 # ==============================================================================
-def parse_file_into_state(
+def parse_file_into_state_with_status(
     file_id: str,
     raw_text: str,
     current_state: dict[str, Any],
-) -> dict[str, Any]:
-    """Parse raw text edits or an imported file into structured studio state.
+) -> tuple[dict[str, Any], bool]:
+    """Parse raw text edits or an imported file into structured state with sync status.
 
     Summary:
-        Implements the reverse half of two-way Form <-> Code synchronization.
-        Extracts known UI fields while storing any extra/custom JSON keys in
-        `state["extra_json_keys"][file_id]` so nothing is lost on round-trip.
+        Implements the reverse half of two-way Form <-> Code synchronization
+        across all 11 canonical files. Symmetrically reflects property additions,
+        updates, AND deletions (for example removing `customHeaders`, optional
+        `.env` lines, `historySize`, `timeoutSeconds`, or `SessionStart` hooks)
+        while preserving unknown JSON properties in `state["extra_json_keys"]`.
     Parameters:
         file_id (str): Canonical studio file identifier.
         raw_text (str): Raw text from the code editor or file upload.
         current_state (dict[str, Any]): Existing studio state to update.
     Return Value:
-        dict[str, Any]: Updated studio state copy (returns `current_state`
-        unchanged if JSON is mid-edit / syntactically invalid).
+        tuple[dict[str, Any], bool]: `(updated_state, code_synced)` where
+        `code_synced` is `False` when a JSON file contains mid-edit syntax errors
+        or a non-object top-level value so the UI can warn accurately instead of
+        falsely reporting `"Two-Way Synced"`.
     Exceptions/Errors:
         None.
     """
@@ -1479,11 +1552,11 @@ def parse_file_into_state(
 
     if file_id == "guard_sh":
         state.setdefault("scripts", {})["guard_sh"] = clean_text
-        return state
+        return state, True
 
     if file_id == "guard_ps1":
         state.setdefault("scripts", {})["guard_ps1"] = clean_text
-        return state
+        return state, True
 
     if file_id == "browser_allowlist":
         domains: list[str] = []
@@ -1492,35 +1565,56 @@ def parse_file_into_state(
             if st and not st.startswith("#"):
                 domains.append(st)
         state["browser_domains"] = domains
-        return state
+        return state, True
 
     if file_id == "gateway_env":
         env_state = state.setdefault("gateway_env", {})
-        env_state["exportPrefix"] = bool(re.search(r"^export\s+AGY_LLM_GATEWAY_", clean_text, flags=re.MULTILINE))
+        has_any_gw_var = bool(re.search(r"^(?:export\s+)?AGY_LLM_GATEWAY_[A-Z_]+=", clean_text, flags=re.MULTILINE))
+        if has_any_gw_var:
+            env_state["exportPrefix"] = bool(
+                re.search(r"^export\s+AGY_LLM_GATEWAY_[A-Z_]+=", clean_text, flags=re.MULTILINE)
+            )
         mapping = {
-            "AGY_LLM_GATEWAY_URL": "url",
-            "AGY_LLM_GATEWAY_API_KEY": "apiKey",
-            "AGY_LLM_GATEWAY_WIRE_PROTOCOL": "wireProtocol",
-            "AGY_LLM_GATEWAY_CA_CERT": "caCert",
-            "AGY_LLM_GATEWAY_HEADERS": "headers",
-            "AGY_LLM_GATEWAY_MODELS": "models",
+            "AGY_LLM_GATEWAY_URL": ("url", ""),
+            "AGY_LLM_GATEWAY_API_KEY": ("apiKey", ""),
+            "AGY_LLM_GATEWAY_WIRE_PROTOCOL": ("wireProtocol", "genai"),
+            "AGY_LLM_GATEWAY_CA_CERT": ("caCert", ""),
+            "AGY_LLM_GATEWAY_HEADERS": ("headers", ""),
+            "AGY_LLM_GATEWAY_MODELS": ("models", ""),
         }
-        for env_key, field_name in mapping.items():
+        for env_key, (field_name, default_val) in mapping.items():
             m = re.search(rf"^(?:export\s+)?{env_key}=(.*)$", clean_text, flags=re.MULTILINE)
             if m:
-                env_state[field_name] = m.group(1).strip().strip('"').strip("'")
-        return state
+                parsed_val = m.group(1).strip().strip('"').strip("'")
+                env_state[field_name] = parsed_val or default_val
+            else:
+                # Reset deleted or commented-out env vars so form & recompile reflect deletion
+                env_state[field_name] = default_val
+
+        extra_lines: list[str] = []
+        known_prefixes = tuple(mapping.keys())
+        for raw_ln in clean_text.splitlines():
+            st_ln = raw_ln.strip()
+            if not st_ln or st_ln.startswith("#"):
+                continue
+            unprefixed = re.sub(r"^export\s+", "", st_ln)
+            key_part = unprefixed.split("=", 1)[0].strip()
+            if key_part not in known_prefixes:
+                extra_lines.append(st_ln)
+        env_state["extraLines"] = extra_lines
+        return state, True
 
     # Parse JSON files
     try:
         parsed = json.loads(clean_text)
     except json.JSONDecodeError:
-        return state
+        return state, False
     if not isinstance(parsed, dict):
-        return state
+        return state, False
 
     if file_id == "admin_settings":
         gw_state = state.setdefault("gateway", {})
+        env_state = state.setdefault("gateway_env", {})
         gw_obj = parsed.get("gateway") if isinstance(parsed.get("gateway"), dict) else {}
         gw_state["caCertPath"] = str(parsed.get("caCertPath") or gw_obj.get("caCertPath") or "")
         gw_state["enabled"] = bool(gw_obj.get("enabled", True))
@@ -1530,28 +1624,46 @@ def parse_file_into_state(
             gw_state["omitApiKeyInMdm"] = False
         else:
             gw_state["omitApiKeyInMdm"] = True
-        gw_state["wireProtocol"] = str(gw_obj.get("wireProtocol", "genai"))
+        gw_state["wireProtocol"] = str(gw_obj.get("wireProtocol", "genai")) or "genai"
+
+        # Keep Tier-2 env URL & wireProtocol aligned just like Left-Pane admin_settings form inputs
+        env_state["url"] = gw_state["url"]
+        env_state["wireProtocol"] = gw_state["wireProtocol"]
 
         hdrs = gw_obj.get("customHeaders")
         if isinstance(hdrs, dict):
             gw_state["customHeaders"] = [{"key": str(k), "value": str(v)} for k, v in hdrs.items()]
+        else:
+            gw_state["customHeaders"] = []
 
-        models_obj = parsed.get("models") if isinstance(parsed.get("models"), dict) else {}
-        if models_obj.get("defaultModelId"):
-            gw_state["defaultModelId"] = str(models_obj["defaultModelId"])
-        if isinstance(models_obj.get("list"), list):
-            parsed_models: list[dict[str, str]] = []
-            for item in models_obj["list"]:
-                if isinstance(item, dict) and item.get("modelId"):
-                    parsed_models.append(
-                        {
-                            "modelId": str(item["modelId"]),
-                            "displayName": str(item.get("displayName", "")),
-                        }
-                    )
-                elif isinstance(item, str):
-                    parsed_models.append({"modelId": item, "displayName": ""})
-            gw_state["models"] = parsed_models
+        if isinstance(parsed.get("models"), dict):
+            models_obj = parsed["models"]
+            gw_state["defaultModelId"] = str(models_obj.get("defaultModelId") or "")
+            if isinstance(models_obj.get("list"), list):
+                parsed_models: list[dict[str, str]] = []
+                for item in models_obj["list"]:
+                    if isinstance(item, dict) and item.get("modelId"):
+                        parsed_models.append(
+                            {
+                                "modelId": str(item["modelId"]),
+                                "displayName": str(item.get("displayName", "")),
+                            }
+                        )
+                    elif isinstance(item, str) and item.strip():
+                        parsed_models.append({"modelId": item.strip(), "displayName": ""})
+                gw_state["models"] = parsed_models
+            else:
+                gw_state["models"] = []
+        elif isinstance(gw_obj.get("models"), dict) and isinstance(gw_obj["models"].get("filter"), list):
+            # Support Preview v2.0 nested models.filter on import prior to Auto-Fix
+            gw_state["models"] = [
+                {"modelId": str(m).strip(), "displayName": ""}
+                for m in gw_obj["models"]["filter"]
+                if str(m).strip()
+            ]
+        else:
+            gw_state["defaultModelId"] = ""
+            gw_state["models"] = []
 
         known_root = {"caCertPath", "gateway", "models"}
         extra: dict[str, Any] = {k: v for k, v in parsed.items() if k not in known_root}
@@ -1571,16 +1683,25 @@ def parse_file_into_state(
 
     elif file_id == "cli_settings":
         cli_state = state.setdefault("cli", {})
-        for key in ("agentMode", "toolPermission", "artifactReviewPolicy"):
-            if key in parsed:
-                cli_state[key] = str(parsed[key])
-        for bkey in ("enableTerminalSandbox", "allowNonWorkspaceAccess", "notifications", "showFeedbackSurvey", "showTips"):
-            if bkey in parsed:
-                cli_state[bkey] = bool(parsed[bkey])
-        if "historySize" in parsed and isinstance(parsed["historySize"], int):
-            cli_state["historySize"] = parsed["historySize"]
-        if any(k in parsed for k in ("notifications", "showFeedbackSurvey", "showTips")):
-            cli_state["includeOptionalUiKeys"] = True
+        cli_state["agentMode"] = str(parsed.get("agentMode", "")) if "agentMode" in parsed else "plan"
+        cli_state["toolPermission"] = str(parsed.get("toolPermission", "proceed-in-sandbox"))
+        cli_state["artifactReviewPolicy"] = str(parsed.get("artifactReviewPolicy", "asks-for-review"))
+        cli_state["enableTerminalSandbox"] = bool(parsed.get("enableTerminalSandbox", True))
+        cli_state["allowNonWorkspaceAccess"] = bool(parsed.get("allowNonWorkspaceAccess", False))
+
+        has_opt_ui = any(k in parsed for k in ("notifications", "showFeedbackSurvey", "showTips"))
+        cli_state["includeOptionalUiKeys"] = has_opt_ui
+        cli_state["notifications"] = bool(parsed.get("notifications", False))
+        cli_state["showFeedbackSurvey"] = bool(parsed.get("showFeedbackSurvey", False))
+        cli_state["showTips"] = bool(parsed.get("showTips", False))
+        if (
+            "historySize" in parsed
+            and isinstance(parsed["historySize"], int)
+            and not isinstance(parsed["historySize"], bool)
+        ):
+            cli_state["historySize"] = int(parsed["historySize"])
+        else:
+            cli_state["historySize"] = 50
 
         sbp = parsed.get("sandboxProxy")
         if isinstance(sbp, dict) and isinstance(sbp.get("http"), dict):
@@ -1594,17 +1715,22 @@ def parse_file_into_state(
             cli_state["sandboxProxyEnabled"] = False
             cli_state["sandboxProxyAddress"] = ""
             cli_state["sandboxProxyCertFile"] = ""
+            cli_state["sandboxProxyUsername"] = ""
+            cli_state["sandboxProxyPassword"] = ""
 
         perms_obj = parsed.get("permissions")
-        if isinstance(perms_obj, dict):
-            norm_perms = {
+        norm_perms = (
+            {
                 "allow": [str(x) for x in perms_obj.get("allow", []) if isinstance(x, str)],
                 "ask": [str(x) for x in perms_obj.get("ask", []) if isinstance(x, str)],
                 "deny": [str(x) for x in perms_obj.get("deny", []) if isinstance(x, str)],
             }
-            cli_state["permissions"] = norm_perms
-            if sync_perms:
-                state.setdefault("desktop", {})["permissions"] = copy.deepcopy(norm_perms)
+            if isinstance(perms_obj, dict)
+            else {"allow": [], "ask": [], "deny": []}
+        )
+        cli_state["permissions"] = norm_perms
+        if sync_perms:
+            state.setdefault("desktop", {})["permissions"] = copy.deepcopy(norm_perms)
 
         known_cli = {
             "agentMode",
@@ -1619,34 +1745,49 @@ def parse_file_into_state(
             "showTips",
             "sandboxProxy",
         }
-        extra_all["cli_settings"] = {k: v for k, v in parsed.items() if k not in known_cli}
+        extra_cli: dict[str, Any] = {k: v for k, v in parsed.items() if k not in known_cli}
+        if isinstance(sbp, dict):
+            extra_sbp = {k: v for k, v in sbp.items() if k != "http"}
+            if isinstance(sbp.get("http"), dict):
+                extra_http = {
+                    k: v
+                    for k, v in sbp["http"].items()
+                    if k not in {"address", "certFile", "username", "password"}
+                }
+                if extra_http:
+                    extra_sbp["http"] = extra_http
+            if extra_sbp:
+                extra_cli["sandboxProxy"] = extra_sbp
+        extra_all["cli_settings"] = extra_cli
 
     elif file_id == "desktop_config":
         desk_state = state.setdefault("desktop", {})
         us = parsed.get("userSettings") if isinstance(parsed.get("userSettings"), dict) else {}
-        for skey in (
-            "autoExecutionPolicy",
-            "artifactReviewMode",
-            "browserJsExecutionPolicy",
-            "nonWorkspaceFileAccessPolicy",
-            "internetAccessPolicy",
-        ):
-            if skey in us:
-                desk_state[skey] = str(us[skey])
-        for bkey in ("enableTerminalSandbox", "sandboxAllowNetwork"):
-            if bkey in us:
-                desk_state[bkey] = bool(us[bkey])
+        desk_state["autoExecutionPolicy"] = str(
+            us.get("autoExecutionPolicy", "CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX")
+        )
+        desk_state["artifactReviewMode"] = str(us.get("artifactReviewMode", "ARTIFACT_REVIEW_MODE_ALWAYS"))
+        desk_state["browserJsExecutionPolicy"] = str(
+            us.get("browserJsExecutionPolicy", "BROWSER_JS_EXECUTION_POLICY_DISABLED")
+        )
+        desk_state["nonWorkspaceFileAccessPolicy"] = str(us.get("nonWorkspaceFileAccessPolicy", ""))
+        desk_state["internetAccessPolicy"] = str(us.get("internetAccessPolicy", ""))
+        desk_state["enableTerminalSandbox"] = bool(us.get("enableTerminalSandbox", True))
+        desk_state["sandboxAllowNetwork"] = bool(us.get("sandboxAllowNetwork", False))
 
         grants = us.get("globalPermissionGrants")
-        if isinstance(grants, dict):
-            norm_grants = {
+        norm_grants = (
+            {
                 "allow": [str(x) for x in grants.get("allow", []) if isinstance(x, str)],
                 "ask": [str(x) for x in grants.get("ask", []) if isinstance(x, str)],
                 "deny": [str(x) for x in grants.get("deny", []) if isinstance(x, str)],
             }
-            desk_state["permissions"] = norm_grants
-            if sync_perms:
-                state.setdefault("cli", {})["permissions"] = copy.deepcopy(norm_grants)
+            if isinstance(grants, dict)
+            else {"allow": [], "ask": [], "deny": []}
+        )
+        desk_state["permissions"] = norm_grants
+        if sync_perms:
+            state.setdefault("cli", {})["permissions"] = copy.deepcopy(norm_grants)
 
         known_us = {
             "autoExecutionPolicy",
@@ -1666,28 +1807,48 @@ def parse_file_into_state(
 
     elif file_id == "mcp_config":
         servers_in = parsed.get("mcpServers")
+        known_srv_keys = {
+            "serverUrl",
+            "url",
+            "command",
+            "args",
+            "disabled",
+            "timeoutSeconds",
+            "enabledTools",
+            "disabledTools",
+            "env",
+            "tools",
+        }
         if isinstance(servers_in, dict):
             new_servers: list[dict[str, Any]] = []
             for sname, scfg in servers_in.items():
                 if not isinstance(scfg, dict):
                     continue
                 srv_url = str(scfg.get("serverUrl") or scfg.get("url") or "")
-                new_servers.append(
-                    {
-                        "name": str(sname),
-                        "transport": "http" if srv_url else "stdio",
-                        "command": str(scfg.get("command", "")),
-                        "args": [str(a) for a in scfg.get("args", [])] if isinstance(scfg.get("args"), list) else [],
-                        "serverUrl": srv_url,
-                        "disabled": bool(scfg.get("disabled", False)),
-                        "timeoutSeconds": int(scfg.get("timeoutSeconds", 60)),
-                        "enabledTools": list(scfg.get("enabledTools", [])) if isinstance(scfg.get("enabledTools"), list) else [],
-                        "disabledTools": list(scfg.get("disabledTools", [])) if isinstance(scfg.get("disabledTools"), list) else [],
-                        "env": dict(scfg.get("env", {})) if isinstance(scfg.get("env"), dict) else {},
-                        "tools": copy.deepcopy(scfg.get("tools", {})) if isinstance(scfg.get("tools"), dict) else {},
-                    }
+                raw_timeout = scfg.get("timeoutSeconds")
+                timeout_val = (
+                    int(raw_timeout)
+                    if isinstance(raw_timeout, (int, float)) and not isinstance(raw_timeout, bool)
+                    else None
                 )
+                srv_entry: dict[str, Any] = {
+                    "name": str(sname),
+                    "transport": "http" if srv_url else "stdio",
+                    "command": str(scfg.get("command", "")),
+                    "args": [str(a) for a in scfg.get("args", [])] if isinstance(scfg.get("args"), list) else [],
+                    "serverUrl": srv_url,
+                    "disabled": bool(scfg.get("disabled", False)),
+                    "timeoutSeconds": timeout_val,
+                    "enabledTools": list(scfg.get("enabledTools", [])) if isinstance(scfg.get("enabledTools"), list) else [],
+                    "disabledTools": list(scfg.get("disabledTools", [])) if isinstance(scfg.get("disabledTools"), list) else [],
+                    "env": dict(scfg.get("env", {})) if isinstance(scfg.get("env"), dict) else {},
+                    "tools": copy.deepcopy(scfg.get("tools", {})) if isinstance(scfg.get("tools"), dict) else {},
+                    "extra": {k: copy.deepcopy(v) for k, v in scfg.items() if k not in known_srv_keys},
+                }
+                new_servers.append(srv_entry)
             state["mcp_servers"] = new_servers
+        else:
+            state["mcp_servers"] = []
         extra_all["mcp_config"] = {k: v for k, v in parsed.items() if k != "mcpServers"}
 
     elif file_id == "hooks_config":
@@ -1717,33 +1878,130 @@ def parse_file_into_state(
             hooks_state["enablePostToolUse"] = False
 
         sess_arr = hooks_obj.get("SessionStart")
-        hooks_state["enableSessionStartBanner"] = bool(isinstance(sess_arr, list) and sess_arr)
-        extra_all["hooks_config"] = {k: v for k, v in parsed.items() if k != "hooks"}
+        if isinstance(sess_arr, list) and sess_arr:
+            hooks_state["enableSessionStartBanner"] = True
+            hooks_state["sessionBannerText"] = _extract_session_banner_text(
+                sess_arr,
+                str(hooks_state.get("sessionBannerText", "")),
+            )
+        else:
+            hooks_state["enableSessionStartBanner"] = False
+
+        extra_hooks: dict[str, Any] = {k: v for k, v in parsed.items() if k != "hooks"}
+        unknown_hook_phases = {
+            k: v for k, v in hooks_obj.items() if k not in {"PreToolUse", "PostToolUse", "SessionStart"}
+        }
+        if unknown_hook_phases:
+            extra_hooks["hooks"] = unknown_hook_phases
+        extra_all["hooks_config"] = extra_hooks
 
     elif file_id == "acp_json":
         acp_state = state.setdefault("acp", {})
-        agy_srv = parsed.get("agent_servers", {}).get("Antigravity", {})
-        if isinstance(agy_srv, dict):
-            if agy_srv.get("command"):
-                acp_state["command"] = str(agy_srv["command"])
+        gw_state = state.setdefault("gateway", {})
+        env_state = state.setdefault("gateway_env", {})
+        agent_servers = parsed.get("agent_servers") if isinstance(parsed.get("agent_servers"), dict) else {}
+        agy_srv = agent_servers.get("Antigravity") if isinstance(agent_servers.get("Antigravity"), dict) else {}
+        if agy_srv:
+            acp_state["command"] = str(agy_srv.get("command", ""))
             if isinstance(agy_srv.get("args"), list):
-                acp_state["args"] = [str(a) for a in agy_srv["args"]]
+                acp_state["args"] = [str(a) for a in agy_srv["args"] if str(a).strip()]
             env_in = agy_srv.get("env")
             if isinstance(env_in, dict):
-                gw_state = state.setdefault("gateway", {})
-                if env_in.get("AGY_LLM_GATEWAY_URL"):
-                    gw_state["url"] = str(env_in["AGY_LLM_GATEWAY_URL"])
-                if env_in.get("AGY_LLM_GATEWAY_WIRE_PROTOCOL"):
-                    gw_state["wireProtocol"] = str(env_in["AGY_LLM_GATEWAY_WIRE_PROTOCOL"])
-        extra_all["acp_json"] = {k: v for k, v in parsed.items() if k != "agent_servers"}
+                known_acp_env = {
+                    "AGY_LLM_GATEWAY_URL",
+                    "AGY_LLM_GATEWAY_API_KEY",
+                    "AGY_LLM_GATEWAY_WIRE_PROTOCOL",
+                    "AGY_LLM_GATEWAY_CA_CERT",
+                    "AGY_LLM_GATEWAY_HEADERS",
+                    "AGY_LLM_GATEWAY_MODELS",
+                }
+                if "AGY_LLM_GATEWAY_URL" in env_in:
+                    gw_state["url"] = str(env_in.get("AGY_LLM_GATEWAY_URL", ""))
+                    env_state["url"] = gw_state["url"]
+                if "AGY_LLM_GATEWAY_WIRE_PROTOCOL" in env_in:
+                    gw_state["wireProtocol"] = str(env_in.get("AGY_LLM_GATEWAY_WIRE_PROTOCOL", "genai")) or "genai"
+                    env_state["wireProtocol"] = gw_state["wireProtocol"]
+                if "AGY_LLM_GATEWAY_API_KEY" in env_in:
+                    key_val = str(env_in.get("AGY_LLM_GATEWAY_API_KEY", ""))
+                    if gw_state.get("omitApiKeyInMdm", False):
+                        env_state["apiKey"] = key_val
+                    else:
+                        gw_state["apiKey"] = key_val
+                gw_state["caCertPath"] = str(env_in.get("AGY_LLM_GATEWAY_CA_CERT", ""))
+
+                if "AGY_LLM_GATEWAY_HEADERS" in env_in and str(env_in["AGY_LLM_GATEWAY_HEADERS"]).strip():
+                    parsed_hdrs: list[dict[str, str]] = []
+                    for pair in str(env_in["AGY_LLM_GATEWAY_HEADERS"]).split(","):
+                        if ":" in pair:
+                            hk, hv = pair.split(":", 1)
+                            if hk.strip():
+                                parsed_hdrs.append({"key": hk.strip(), "value": hv.strip()})
+                    gw_state["customHeaders"] = parsed_hdrs
+                else:
+                    gw_state["customHeaders"] = []
+
+                if "AGY_LLM_GATEWAY_MODELS" in env_in and str(env_in["AGY_LLM_GATEWAY_MODELS"]).strip():
+                    existing_names = {
+                        str(m.get("modelId", "")): str(m.get("displayName", ""))
+                        for m in gw_state.get("models", [])
+                        if isinstance(m, dict)
+                    }
+                    gw_state["models"] = [
+                        {"modelId": mid.strip(), "displayName": existing_names.get(mid.strip(), "")}
+                        for mid in str(env_in["AGY_LLM_GATEWAY_MODELS"]).split(",")
+                        if mid.strip()
+                    ]
+                elif "AGY_LLM_GATEWAY_MODELS" not in env_in:
+                    gw_state["models"] = []
+
+                acp_state["extraEnv"] = {
+                    str(k): str(v) for k, v in env_in.items() if k not in known_acp_env
+                }
+
+        extra_acp: dict[str, Any] = {k: v for k, v in parsed.items() if k != "agent_servers"}
+        extra_servers: dict[str, Any] = {k: v for k, v in agent_servers.items() if k != "Antigravity"}
+        if agy_srv:
+            extra_agy = {k: v for k, v in agy_srv.items() if k not in {"command", "args", "env"}}
+            if extra_agy:
+                extra_servers["Antigravity"] = extra_agy
+        if extra_servers:
+            extra_acp["agent_servers"] = extra_servers
+        extra_all["acp_json"] = extra_acp
 
     elif file_id == "acp_auth":
-        auth_obj = parsed.get("auth")
-        if isinstance(auth_obj, dict) and auth_obj.get("type"):
-            state.setdefault("acp", {})["authType"] = str(auth_obj["type"])
-        extra_all["acp_auth"] = {k: v for k, v in parsed.items() if k != "auth"}
+        auth_obj = parsed.get("auth") if isinstance(parsed.get("auth"), dict) else {}
+        state.setdefault("acp", {})["authType"] = str(auth_obj.get("type", "gateway")) or "gateway"
+        extra_auth_doc: dict[str, Any] = {k: v for k, v in parsed.items() if k != "auth"}
+        extra_auth_inner = {k: v for k, v in auth_obj.items() if k != "type"}
+        if extra_auth_inner:
+            extra_auth_doc["auth"] = extra_auth_inner
+        extra_all["acp_auth"] = extra_auth_doc
 
-    return state
+    return state, True
+
+
+def parse_file_into_state(
+    file_id: str,
+    raw_text: str,
+    current_state: dict[str, Any],
+) -> dict[str, Any]:
+    """Parse raw text edits or an imported file into structured studio state.
+
+    Summary:
+        Compatibility wrapper around `parse_file_into_state_with_status`
+        returning the updated studio state dictionary.
+    Parameters:
+        file_id (str): Canonical studio file identifier.
+        raw_text (str): Raw text from the code editor or file upload.
+        current_state (dict[str, Any]): Existing studio state to update.
+    Return Value:
+        dict[str, Any]: Updated studio state copy (returns `current_state`
+        unchanged if JSON is mid-edit / syntactically invalid).
+    Exceptions/Errors:
+        None.
+    """
+    updated_state, _ = parse_file_into_state_with_status(file_id, raw_text, current_state)
+    return updated_state
 
 
 # ==============================================================================

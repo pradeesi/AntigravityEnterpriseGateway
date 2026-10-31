@@ -28,7 +28,7 @@ Dependencies / Side Effects:
   <title>Antigravity Admin Policy Studio</title>
   <link href="{{ url_for('static', filename='css/fonts.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-  <link href="{{ url_for('static', filename='css/studio.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='css/studio.css') }}?v={{ asset_version | default('1') }}" rel="stylesheet">
 </head>
 <body>
   <div class="studio-shell">
@@ -608,6 +608,6 @@ Dependencies / Side Effects:
 
   <script id="studio-bootstrap-data" type="application/json">{{ bootstrap_json | safe }}</script>
   <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/studio.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/studio.js') }}?v={{ asset_version | default('1') }}"></script>
 </body>
 </html>

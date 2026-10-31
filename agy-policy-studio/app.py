@@ -22,15 +22,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request, send_file
-from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from studio_engine import (
     ALL_OS,
@@ -45,6 +47,7 @@ from studio_engine import (
     import_archive_or_files,
     load_preset_state,
     parse_file_into_state,
+    parse_file_into_state_with_status,
 )
 from validator_engine import apply_autofix, detect_file_type, validate_bundle, validate_single_file
 
@@ -56,6 +59,29 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("agy_policy_studio")
+
+
+def _compute_asset_version() -> str:
+    """Compute a short SHA-256 content digest over mutable studio static assets.
+
+    Summary:
+        Produces a deterministic cache-busting query token (`?v=...`) for
+        `studio.js` and `studio.css` so browsers immediately pick up updated
+        client synchronization logic after deployments or restarts.
+    Parameters:
+        None.
+    Return Value:
+        str: 10-character lowercase hexadecimal digest string.
+    Exceptions/Errors:
+        None.
+    """
+    base_dir = Path(__file__).resolve().parent / "static"
+    hasher = hashlib.sha256()
+    for rel_path in ("css/studio.css", "js/studio.js"):
+        candidate = base_dir / rel_path
+        if candidate.is_file():
+            hasher.update(candidate.read_bytes())
+    return hasher.hexdigest()[:10] or "1"
 
 
 def _parse_positive_int(raw_val: str | None, default: int, minimum: int = 1, maximum: int = 64) -> int:
@@ -101,14 +127,15 @@ def create_app() -> Flask:
     max_mb = _parse_positive_int(os.getenv("MAX_UPLOAD_MB"), default=16, minimum=1, maximum=64)
     application.config["MAX_CONTENT_LENGTH"] = max_mb * 1024 * 1024
     application.config["JSON_SORT_KEYS"] = False
+    asset_version = _compute_asset_version()
 
     @application.after_request
     def _apply_security_headers(resp: Response) -> Response:
-        """Attach defensive HTTP security and no-store cache headers.
+        """Attach defensive HTTP security and cache revalidation headers.
 
         Summary:
-            Prevents MIME sniffing, clickjacking, and disk caching of API
-            responses that may carry administrator-entered policy data.
+            Prevents MIME sniffing, clickjacking, stale JS/CSS caching, and disk
+            caching of API responses that may carry administrator policy data.
         Parameters:
             resp (Response): Outgoing Flask HTTP response.
         Return Value:
@@ -132,6 +159,8 @@ def create_app() -> Flask:
         )
         if request.path.startswith("/api/"):
             resp.headers["Cache-Control"] = "no-store, max-age=0"
+        elif request.path == "/" or request.path.startswith(("/static/js/", "/static/css/")):
+            resp.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
         return resp
 
     @application.errorhandler(RequestEntityTooLarge)
@@ -151,19 +180,23 @@ def create_app() -> Flask:
         return jsonify({"error": f"Upload exceeds maximum allowed size ({max_mb} MiB)."}), 413
 
     @application.errorhandler(Exception)
-    def _handle_unexpected_error(exc: Exception) -> tuple[Response, int]:
-        """Handle unexpected server exceptions without leaking stack traces.
+    def _handle_unexpected_error(exc: Exception) -> HTTPException | tuple[Response, int]:
+        """Handle unexpected server exceptions without masking standard HTTP errors.
 
         Summary:
-            Logs server errors structurally without exposing sensitive values to
-            clients.
+            Passes standard Werkzeug `HTTPException` responses (`404`, `405`)
+            through untouched while logging genuine unhandled runtime errors as
+            HTTP 500 JSON responses without leaking stack traces.
         Parameters:
             exc (Exception): Unhandled exception instance.
         Return Value:
-            tuple[Response, int]: Generic JSON error payload and HTTP 500 status.
+            HTTPException | tuple[Response, int]: Original HTTPException or
+            generic JSON error payload with HTTP 500 status.
         Exceptions/Errors:
             None.
         """
+        if isinstance(exc, HTTPException):
+            return exc
         logger.error("Unhandled error on %s %s: %s", request.method, request.path, type(exc).__name__)
         return jsonify({"error": "Internal studio processing error."}), 500
 
@@ -183,6 +216,22 @@ def create_app() -> Flask:
         if not isinstance(payload, dict):
             raise ValueError("Request body must be a valid JSON object.")
         return payload
+
+    @application.get("/favicon.ico")
+    def favicon_empty() -> Response:
+        """Return a clean empty response for browser `/favicon.ico` probes.
+
+        Summary:
+            Prevents spurious `404 NotFound` browser favicon requests in server
+            logs under air-gapped deployments.
+        Parameters:
+            None.
+        Return Value:
+            Response: Empty HTTP 204 No Content response.
+        Exceptions/Errors:
+            None.
+        """
+        return Response(status=204)
 
     @application.get("/health")
     def health_check() -> tuple[Response, int]:
@@ -223,7 +272,7 @@ def create_app() -> Flask:
             "reference": REFERENCE_GUIDE,
             "initial": compile_studio_state(initial_state),
         }
-        return render_template("index.html", bootstrap_json=json.dumps(bootstrap))
+        return render_template("index.html", bootstrap_json=json.dumps(bootstrap), asset_version=asset_version)
 
     @application.get("/api/presets")
     def list_presets() -> tuple[Response, int]:
@@ -306,12 +355,15 @@ def create_app() -> Flask:
         Summary:
             Reverse half of Two-Way Code -> Form synchronization. Preserves
             exact edited text in `files[file_id]` (including mid-edit syntax
-            errors so the validator highlights the exact line/col) while updating
-            structured `state` and synchronized surfaces when valid.
+            errors so the validator highlights the exact line/col), updates
+            structured `state` and synchronized surfaces when valid, and reports
+            `code_synced` (`True` or `False`) so the UI status pill accurately
+            distinguishes synced state from mid-edit JSON syntax errors.
         Parameters:
             None (reads JSON body `{"file_id": str, "content": str, "state": dict}`).
         Return Value:
-            tuple[Response, int]: Updated state, active files, and live validation.
+            tuple[Response, int]: Updated state, active files, `code_synced`,
+            and live validation.
         Exceptions/Errors:
             Returns HTTP 400 on invalid `file_id` or malformed JSON body.
         """
@@ -326,9 +378,10 @@ def create_app() -> Flask:
                 current_state = build_default_state()
 
             has_bom = raw_content.startswith("\ufeff")
-            updated_state = parse_file_into_state(file_id, raw_content, current_state)
+            updated_state, code_synced = parse_file_into_state_with_status(file_id, raw_content, current_state)
             compiled = compile_studio_state(updated_state)
             compiled["files"][file_id] = raw_content
+            compiled["code_synced"] = code_synced
             compiled["validation"] = validate_bundle(
                 files_map=compiled["files"],
                 os_list=compiled["state"]["os_list"],

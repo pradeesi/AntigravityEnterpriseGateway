@@ -4,14 +4,16 @@
  * Purpose:
  *   Powers the responsive Split-Pane Antigravity Admin Policy Studio UI using
  *   progressive multi-select dropdowns (OS -> Surface -> Policy Type & Target
- *   Files), a left-panel File Reference & Manual Lock CLI card, two-way
- *   Form <-> Code synchronization, 1-click Auto-Fix remediation, multi-mode
- *   file import, and BOM-free single-file / `.zip` MDM bundle downloads.
+ *   Files), a left-panel File Reference & Manual Lock CLI card, race-free
+ *   two-way Form <-> Code synchronization, 1-click Auto-Fix remediation,
+ *   multi-mode file import, and BOM-free single-file / `.zip` MDM downloads.
  *
  * Architecture / Context:
  *   Vanilla ES2022 controller loaded by `templates/index.html`. Communicates
  *   with the stateless Flask backend (`app.py`) via `/api/*` JSON and multipart
- *   endpoints. Persists only UI theme (`light`/`dark`) in `localStorage`.
+ *   endpoints using monotonic sequence IDs (`syncSeq`) and `AbortController`
+ *   cancellation so out-of-order HTTP responses never clobber active typing.
+ *   Persists only UI theme (`light`/`dark`) in `localStorage`.
  *
  * Dependencies / Side Effects:
  *   Requires Bootstrap 5.3 `Dropdown`, `Modal`, and `Toast` globals.
@@ -87,8 +89,14 @@
     activePermBucket: "allow",
     permFilterQuery: "",
     showSecrets: false,
+    lastDevUser: initialState.dev_user || "alice",
+    syncSeq: 0,
+    activeAbortController: null,
     codeSyncTimer: null,
     formSyncTimer: null,
+    pendingCodeSync: null,
+    pendingFormSync: null,
+    unparsedCodeFiles: {},
   };
 
   /**
@@ -106,6 +114,92 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  /**
+   * Build `<option>` tags for a `<select>`, preserving unexpected values edited in raw code.
+   *
+   * @summary Ensures Code -> Form two-way sync always displays custom or invalid enum
+   *   values typed in `#code-editor` rather than silently showing the first option.
+   * @param {Array<{value: string, label: string}>} options - Standard selectable options.
+   * @param {string} currentValue - Current value stored in `AppStore.state`.
+   * @returns {string} Joined `<option>` HTML markup.
+   * @throws {never} Never throws.
+   */
+  function renderSelectOptions(options, currentValue) {
+    const cur = String(currentValue ?? "");
+    const hasMatch = options.some((opt) => opt.value === cur);
+    const list = hasMatch
+      ? options
+      : [...options, { value: cur, label: `${cur || '""'} (Custom in Code)` }];
+    return list
+      .map(
+        (opt) =>
+          `<option value="${escapeHtml(opt.value)}" ${opt.value === cur ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
+      )
+      .join("");
+  }
+
+  /**
+   * Check whether an error came from an intentional `AbortController.abort()` call.
+   *
+   * @summary Prevents superseded network requests from triggering error toasts.
+   * @param {unknown} err - Caught exception object.
+   * @returns {boolean} True when the error represents an aborted fetch.
+   * @throws {never} Never throws.
+   */
+  function isAbortError(err) {
+    if (!err || typeof err !== "object") {
+      return false;
+    }
+    return err.name === "AbortError" || String(err.message || "").toLowerCase().includes("aborted");
+  }
+
+  /**
+   * Update the `#sync-status-pill` badge in the Right-Pane editor header.
+   *
+   * @summary Communicates live synchronization state (`synced`, `syncing`,
+   *   `parsing`, or `syntax_error`) accurately to the administrator.
+   * @param {"synced"|"syncing"|"parsing"|"syntax_error"} mode - Sync badge mode.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function setSyncPillState(mode) {
+    const syncPill = document.getElementById("sync-status-pill");
+    if (!syncPill) {
+      return;
+    }
+    if (mode === "syntax_error") {
+      syncPill.className = "badge text-bg-warning border fw-semibold";
+      syncPill.textContent = "Syntax Error — Fix JSON to Sync";
+      return;
+    }
+    syncPill.className = "badge text-bg-light border fw-normal";
+    if (mode === "syncing") {
+      syncPill.textContent = "Syncing...";
+    } else if (mode === "parsing") {
+      syncPill.textContent = "Parsing...";
+    } else {
+      syncPill.textContent = "Two-Way Synced";
+    }
+  }
+
+  /**
+   * Refresh `#sync-status-pill` according to whether the selected file has unparsed JSON.
+   *
+   * @summary Keeps the sync badge accurate when switching between valid and malformed files.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function refreshSyncPillForSelectedFile() {
+    if (
+      AppStore.selectedFileId &&
+      Object.prototype.hasOwnProperty.call(AppStore.unparsedCodeFiles, AppStore.selectedFileId)
+    ) {
+      setSyncPillState("syntax_error");
+    } else {
+      setSyncPillState("synced");
+    }
   }
 
   /**
@@ -150,17 +244,19 @@
   /**
    * Send a JSON POST request to a stateless studio API endpoint.
    *
-   * @summary Wrapper around `fetch` with defensive error handling.
+   * @summary Wrapper around `fetch` supporting `AbortSignal` and structured error messages.
    * @param {string} url - API endpoint path (e.g., `/api/compile`).
    * @param {Object} payload - Serializable request body object.
+   * @param {Object} [fetchOptions={}] - Optional fetch overrides such as `{ signal }`.
    * @returns {Promise<Object>} Parsed JSON response payload.
-   * @throws {Error} Throws descriptive Error when HTTP status is non-2xx.
+   * @throws {Error} Throws descriptive Error when HTTP status is non-2xx or aborted.
    */
-  async function postJson(url, payload) {
+  async function postJson(url, payload, fetchOptions = {}) {
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      ...fetchOptions,
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
@@ -221,17 +317,34 @@
    * Apply a backend compilation or import payload to `AppStore` and render UI.
    *
    * @summary Synchronizes Step 1/2/3 visibility, dropdown summaries, File
-   *   Reference Card, form controls, live code editor, and validation drawer.
+   *   Reference Card, form controls, live code editor, and validation drawer
+   *   while preserving any other file's unparsed raw JSON edits.
    * @param {Object} payload - Compiled payload returned by `/api/*`.
-   * @param {Object} [options={}] - Rendering flags (`skipEditor`, `skipForm`, `autoSelectFiles`).
+   * @param {Object} [options={}] - Rendering flags (`skipEditor`, `skipForm`,
+   *   `autoSelectFiles`, `preserveFormFocus`, `resetUnparsed`).
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
   function applyServerPayload(payload, options = {}) {
+    if (options.resetUnparsed) {
+      AppStore.unparsedCodeFiles = {};
+    }
+
     AppStore.state = payload.state;
+    AppStore.lastDevUser = (payload.state && payload.state.dev_user) || "alice";
     AppStore.availableFileIds = payload.available_file_ids || [];
     AppStore.activeFileIds = payload.active_file_ids || [];
-    AppStore.files = payload.files || {};
+
+    const nextFiles = { ...(payload.files || {}) };
+    Object.keys(AppStore.unparsedCodeFiles).forEach((dirtyFid) => {
+      if (Object.prototype.hasOwnProperty.call(nextFiles, dirtyFid)) {
+        nextFiles[dirtyFid] = AppStore.unparsedCodeFiles[dirtyFid];
+      } else {
+        delete AppStore.unparsedCodeFiles[dirtyFid];
+      }
+    });
+    AppStore.files = nextFiles;
+
     AppStore.validation = payload.validation || {
       error_count: 0,
       warn_count: 0,
@@ -271,7 +384,7 @@
    * Re-render all progressive left-pane and right-pane sections consistently.
    *
    * @summary Coordinates progressive step visibility and individual widgets.
-   * @param {Object} [options={}] - Optional `{skipForm, skipEditor}` flags.
+   * @param {Object} [options={}] - Optional `{skipForm, skipEditor, preserveFormFocus}` flags.
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
@@ -291,7 +404,7 @@
       formContainer.classList.toggle("d-none", !hasFiles);
     }
     if (hasFiles && !options.skipForm) {
-      renderActiveFormPanel();
+      renderActiveFormPanel(Boolean(options.preserveFormFocus));
     }
 
     const emptyRight = document.getElementById("right-empty-state");
@@ -387,7 +500,7 @@
     const tbodyFiles = document.getElementById("tbody-ref-files");
     if (tbodyFiles) {
       tbodyFiles.innerHTML = CATALOG.map((item) => {
-        const rawPath = (item.paths && item.paths[cliOs]) ? item.paths[cliOs].replace(/\{user\}/g, u) : "";
+        const rawPath = item.paths && item.paths[cliOs] ? item.paths[cliOs].replace(/\{user\}/g, u) : "";
         const primaryPath = rawPath ? rawPath.split("  (")[0].trim() : "";
         const cliBlock = AppStore.allFilesCli?.[item.id]?.[cliOs]?.lock || "";
         const surfacesText = (item.surface_details || item.surfaces).join(", ");
@@ -616,7 +729,7 @@
         filesCnt.classList.remove("d-none");
       } else if (active.length === avail.length) {
         filesBtn.classList.remove("is-placeholder");
-        filesLbl.textContent = `All Matching Files Selected`;
+        filesLbl.textContent = "All Matching Files Selected";
         filesCnt.textContent = `${active.length}/${avail.length}`;
         filesCnt.classList.remove("d-none");
       } else {
@@ -655,17 +768,21 @@
         .join("");
 
       menuFiles.querySelectorAll("[data-file-check]").forEach((chk) => {
-        chk.addEventListener("change", () => {
+        chk.addEventListener("change", async () => {
           const fid = chk.dataset.fileCheck;
+          const isNowChecked = chk.checked;
+          await flushPendingSync();
+          const curAvail = AppStore.availableFileIds || [];
           const curSet = new Set(AppStore.state.selected_file_ids || []);
-          if (chk.checked) {
+          if (isNowChecked) {
             curSet.add(fid);
             AppStore.selectedFileId = fid;
           } else {
             curSet.delete(fid);
+            delete AppStore.unparsedCodeFiles[fid];
           }
-          AppStore.state.selected_file_ids = avail.filter((id) => curSet.has(id));
-          scheduleFormCompile(true);
+          AppStore.state.selected_file_ids = curAvail.filter((id) => curSet.has(id));
+          scheduleFormCompile(true, { keepCurrentUnparsed: true });
         });
       });
     }
@@ -809,30 +926,327 @@
   }
 
   /**
+   * Execute an ordered `/api/compile` call and discard stale out-of-order responses.
+   *
+   * @summary Sends structured `AppStore.state` to `/api/compile` under `reqSeq`
+   *   and `AbortController` protection so rapid form edits never overwrite newer input.
+   * @param {boolean} reRenderForm - Whether to re-render the left form container.
+   * @param {number} reqSeq - Monotonic sequence token captured when scheduled.
+   * @returns {Promise<void>} Resolves once compilation finishes or is superseded.
+   * @throws {never} Errors are surfaced via toast unless aborted.
+   */
+  async function executeFormCompile(reRenderForm, reqSeq) {
+    if (reqSeq !== AppStore.syncSeq) {
+      return;
+    }
+    AppStore.activeAbortController?.abort();
+    const controller = new AbortController();
+    AppStore.activeAbortController = controller;
+    const stateSnapshot = JSON.parse(JSON.stringify(AppStore.state));
+
+    try {
+      const res = await postJson(
+        "/api/compile",
+        { state: stateSnapshot },
+        { signal: controller.signal }
+      );
+      // Drop out-of-order response if user typed newer characters while in flight
+      if (reqSeq !== AppStore.syncSeq) {
+        return;
+      }
+      applyServerPayload(res, {
+        skipForm: !reRenderForm,
+        skipEditor: false,
+        preserveFormFocus: true,
+      });
+      refreshSyncPillForSelectedFile();
+    } catch (err) {
+      if (!isAbortError(err)) {
+        showToast(err.message, "danger");
+      }
+    }
+  }
+
+  /**
    * Trigger a debounced `/api/compile` call after left-pane scope or form edits.
    *
-   * @summary Compiles structured form state into right-pane raw code + validation.
+   * @summary Cancels any pending code-sync timer, increments `AppStore.syncSeq`,
+   *   and compiles structured form state into right-pane raw code + validation.
    * @param {boolean} [reRenderForm=false] - Whether to re-render left form DOM.
+   * @param {Object} [opts={}] - Optional `{ keepCurrentUnparsed }` flag when only scope changed.
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
-  function scheduleFormCompile(reRenderForm = false) {
-    const syncPill = document.getElementById("sync-status-pill");
-    if (syncPill) {
-      syncPill.textContent = "Syncing";
+  function scheduleFormCompile(reRenderForm = false, opts = {}) {
+    clearTimeout(AppStore.codeSyncTimer);
+    AppStore.codeSyncTimer = null;
+    AppStore.pendingCodeSync = null;
+
+    if (!opts.keepCurrentUnparsed && AppStore.selectedFileId) {
+      delete AppStore.unparsedCodeFiles[AppStore.selectedFileId];
     }
+
+    AppStore.activeAbortController?.abort();
+    const reqSeq = ++AppStore.syncSeq;
+    AppStore.pendingFormSync = { reRenderForm: Boolean(reRenderForm), seq: reqSeq };
+    setSyncPillState("syncing");
+
     clearTimeout(AppStore.formSyncTimer);
     AppStore.formSyncTimer = setTimeout(async () => {
-      try {
-        const res = await postJson("/api/compile", { state: AppStore.state });
-        applyServerPayload(res, { skipForm: !reRenderForm, skipEditor: false });
-        if (syncPill) {
-          syncPill.textContent = "Two-Way Synced";
-        }
-      } catch (err) {
+      AppStore.formSyncTimer = null;
+      AppStore.pendingFormSync = null;
+      await executeFormCompile(reRenderForm, reqSeq);
+    }, 80);
+  }
+
+  /**
+   * Detect which permission grant bucket (`allow`, `ask`, or `deny`) changed during a raw code edit.
+   *
+   * @summary Auto-switches `AppStore.activePermBucket` when a user edits a non-active
+   *   permission array in `#code-editor` so the Left Form immediately displays the change.
+   * @param {Object} prevPerms - Previous `{allow, ask, deny}` arrays.
+   * @param {Object} nextPerms - Newly parsed `{allow, ask, deny}` arrays.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function syncActivePermBucketOnCodeEdit(prevPerms, nextPerms) {
+    if (!prevPerms || !nextPerms) {
+      return;
+    }
+    const cur = AppStore.activePermBucket || "allow";
+    const sameBucket = (b) =>
+      JSON.stringify(prevPerms[b] || []) === JSON.stringify(nextPerms[b] || []);
+
+    let targetBucket = cur;
+    if (sameBucket(cur)) {
+      const changed = ["allow", "ask", "deny"].find((b) => !sameBucket(b));
+      if (changed) {
+        targetBucket = changed;
+        AppStore.activePermBucket = changed;
+      }
+    }
+
+    if (AppStore.permFilterQuery.trim()) {
+      const q = AppStore.permFilterQuery.trim().toLowerCase();
+      const bucketRules = Array.isArray(nextPerms[targetBucket]) ? nextPerms[targetBucket] : [];
+      if (bucketRules.length > 0 && !bucketRules.some((r) => String(r).toLowerCase().includes(q))) {
+        AppStore.permFilterQuery = "";
+      }
+    }
+  }
+
+  /**
+   * Execute an ordered `/api/sync-code` request for a specific `editedFileId` and `rawContent`.
+   *
+   * @summary Parses raw right-pane edits into `AppStore.state`, updates left-pane
+   *   form controls, and marks mid-edit JSON syntax errors explicitly without
+   *   clobbering active typing or falsely reporting `"Two-Way Synced"`.
+   * @param {string} editedFileId - File ID captured at the exact moment of the edit.
+   * @param {string} rawContent - Raw text content captured from `#code-editor`.
+   * @param {number} reqSeq - Monotonic sequence token captured when scheduled.
+   * @returns {Promise<void>} Resolves once synchronization completes or is superseded.
+   * @throws {never} Errors are surfaced via toast unless aborted.
+   */
+  async function executeCodeSync(editedFileId, rawContent, reqSeq) {
+    if (!editedFileId || reqSeq !== AppStore.syncSeq) {
+      return;
+    }
+    AppStore.activeAbortController?.abort();
+    const controller = new AbortController();
+    AppStore.activeAbortController = controller;
+
+    const prevCliPerms = JSON.parse(JSON.stringify(AppStore.state.cli?.permissions || {}));
+    const prevDeskPerms = JSON.parse(JSON.stringify(AppStore.state.desktop?.permissions || {}));
+
+    try {
+      const res = await postJson(
+        "/api/sync-code",
+        {
+          file_id: editedFileId,
+          content: rawContent,
+          state: AppStore.state,
+        },
+        { signal: controller.signal }
+      );
+      if (reqSeq !== AppStore.syncSeq) {
+        return;
+      }
+
+      if (res.code_synced === false) {
+        AppStore.unparsedCodeFiles[editedFileId] = rawContent;
+        applyServerPayload(res, { skipEditor: true, skipForm: true });
+        refreshSyncPillForSelectedFile();
+        return;
+      }
+
+      delete AppStore.unparsedCodeFiles[editedFileId];
+      if (editedFileId === "cli_settings") {
+        syncActivePermBucketOnCodeEdit(prevCliPerms, res.state?.cli?.permissions);
+      } else if (editedFileId === "desktop_config") {
+        const nextDeskPerms = res.state?.sync_permissions
+          ? res.state?.cli?.permissions
+          : res.state?.desktop?.permissions;
+        syncActivePermBucketOnCodeEdit(prevDeskPerms, nextDeskPerms);
+      }
+
+      const stillViewingEditedFile = AppStore.selectedFileId === editedFileId;
+      applyServerPayload(res, {
+        skipEditor: stillViewingEditedFile,
+        skipForm: false,
+        preserveFormFocus: true,
+      });
+      refreshSyncPillForSelectedFile();
+    } catch (err) {
+      if (!isAbortError(err)) {
         showToast(err.message, "danger");
       }
-    }, 100);
+    }
+  }
+
+  /**
+   * Schedule a debounced `/api/sync-code` call after typing in `#code-editor`.
+   *
+   * @summary Captures `editedFileId` and `rawContent` eagerly at keystroke time so
+   *   switching files within the debounce window never cross-contaminates files.
+   * @param {string} editedFileId - Active file ID being edited in `#code-editor`.
+   * @param {string} rawContent - Updated text value of `#code-editor`.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function scheduleCodeSync(editedFileId, rawContent) {
+    if (!editedFileId) {
+      return;
+    }
+    clearTimeout(AppStore.formSyncTimer);
+    AppStore.formSyncTimer = null;
+    AppStore.pendingFormSync = null;
+
+    AppStore.activeAbortController?.abort();
+    const reqSeq = ++AppStore.syncSeq;
+    AppStore.pendingCodeSync = {
+      fileId: editedFileId,
+      content: rawContent,
+      seq: reqSeq,
+    };
+    setSyncPillState("parsing");
+
+    clearTimeout(AppStore.codeSyncTimer);
+    AppStore.codeSyncTimer = setTimeout(async () => {
+      AppStore.codeSyncTimer = null;
+      AppStore.pendingCodeSync = null;
+      await executeCodeSync(editedFileId, rawContent, reqSeq);
+    }, 160);
+  }
+
+  /**
+   * Immediately flush any debounced code-sync or form-compile operation before
+   * switching files, running Auto-Fix, or exporting bundles.
+   *
+   * @summary Guarantees zero lost edits when the user acts faster than the debounce timer.
+   * @returns {Promise<void>} Resolves once any pending sync request finishes.
+   * @throws {never} Never throws.
+   */
+  async function flushPendingSync() {
+    if (AppStore.codeSyncTimer) {
+      clearTimeout(AppStore.codeSyncTimer);
+      AppStore.codeSyncTimer = null;
+    }
+    if (AppStore.pendingCodeSync) {
+      const pending = AppStore.pendingCodeSync;
+      AppStore.pendingCodeSync = null;
+      await executeCodeSync(pending.fileId, pending.content, pending.seq);
+    }
+
+    if (AppStore.formSyncTimer) {
+      clearTimeout(AppStore.formSyncTimer);
+      AppStore.formSyncTimer = null;
+    }
+    if (AppStore.pendingFormSync) {
+      const pendingForm = AppStore.pendingFormSync;
+      AppStore.pendingFormSync = null;
+      await executeFormCompile(pendingForm.reRenderForm, pendingForm.seq);
+    }
+  }
+
+  /**
+   * Capture focus and text-cursor selection inside `#form-panel-container` prior to re-render.
+   *
+   * @summary Prevents left-pane DOM refreshes from dropping keyboard focus or cursor offset.
+   * @param {HTMLElement} container - Left-pane form container element.
+   * @returns {Object|null} Snapshot of focused control selector and selection range, or null.
+   * @throws {never} Never throws.
+   */
+  function captureFormFocus(container) {
+    const active = document.activeElement;
+    if (!active || !container.contains(active)) {
+      return null;
+    }
+    let selector = null;
+    if (active.id) {
+      selector = `#${CSS.escape(active.id)}`;
+    } else {
+      const dataAttrs = [
+        "data-gw-hdr-key",
+        "data-gw-hdr-val",
+        "data-gw-mdl-id",
+        "data-gw-mdl-name",
+        "data-mcp-name",
+        "data-mcp-transport",
+        "data-mcp-url",
+        "data-mcp-cmd",
+        "data-mcp-args",
+        "data-mcp-timeout",
+        "data-mcp-allow",
+        "data-mcp-deny",
+      ];
+      for (const attr of dataAttrs) {
+        if (active.hasAttribute(attr)) {
+          selector = `[${attr}="${CSS.escape(active.getAttribute(attr))}"]`;
+          break;
+        }
+      }
+    }
+    if (!selector) {
+      return null;
+    }
+    let selStart = null;
+    let selEnd = null;
+    try {
+      if (typeof active.selectionStart === "number") {
+        selStart = active.selectionStart;
+        selEnd = active.selectionEnd;
+      }
+    } catch {
+      // Input types such as `number` do not support selectionStart in Chromium
+    }
+    return { selector, selStart, selEnd };
+  }
+
+  /**
+   * Restore focus and cursor selection inside `#form-panel-container` after re-render.
+   *
+   * @summary Re-focuses the matching form input without scrolling the viewport.
+   * @param {HTMLElement} container - Left-pane form container element.
+   * @param {Object|null} snapshot - Snapshot returned by `captureFormFocus`.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function restoreFormFocus(container, snapshot) {
+    if (!snapshot || !snapshot.selector) {
+      return;
+    }
+    const nextEl = container.querySelector(snapshot.selector);
+    if (!nextEl || nextEl.disabled) {
+      return;
+    }
+    nextEl.focus({ preventScroll: true });
+    if (snapshot.selStart !== null && snapshot.selEnd !== null) {
+      try {
+        nextEl.setSelectionRange(snapshot.selStart, snapshot.selEnd);
+      } catch {
+        // Ignore input types that disallow programmatic selection ranges
+      }
+    }
   }
 
   /**
@@ -955,27 +1369,21 @@
 
     container.querySelector("#select-perm-bucket")?.addEventListener("change", (e) => {
       AppStore.activePermBucket = e.target.value;
-      renderActiveFormPanel();
+      renderActiveFormPanel(false);
     });
 
     const searchInput = container.querySelector("#input-perm-search");
     if (searchInput) {
       searchInput.addEventListener("input", () => {
         AppStore.permFilterQuery = searchInput.value;
-        const pos = searchInput.selectionStart;
-        renderActiveFormPanel();
-        const nextSearch = document.getElementById("input-perm-search");
-        if (nextSearch) {
-          nextSearch.focus();
-          nextSearch.setSelectionRange(pos, pos);
-        }
+        renderActiveFormPanel(true);
       });
     }
 
     container.querySelector("#btn-inline-unlink")?.addEventListener("click", () => {
       AppStore.state.sync_permissions = false;
       renderStep1Controls();
-      renderActiveFormPanel();
+      renderActiveFormPanel(false);
       scheduleFormCompile(false);
     });
 
@@ -1006,7 +1414,8 @@
       }
       syncMirrorIfLinked();
       newRuleInput.value = "";
-      renderActiveFormPanel();
+      renderActiveFormPanel(false);
+      document.getElementById("input-new-perm-rule")?.focus();
       scheduleFormCompile(false);
     };
 
@@ -1024,7 +1433,7 @@
         const perms = getTargetPerms();
         perms[AppStore.activePermBucket].splice(idx, 1);
         syncMirrorIfLinked();
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
     });
@@ -1034,11 +1443,12 @@
    * Render Step 3B: Focused visual form controls for `AppStore.selectedFileId`.
    *
    * @summary Renders ONLY the active file's form fields directly below the
-   *   File Reference Card on the Left Panel.
+   *   File Reference Card on the Left Panel while optionally preserving focus.
+   * @param {boolean} [preserveFocus=false] - Whether to preserve active input focus & cursor.
    * @returns {void} Returns nothing.
    * @throws {never} Never throws.
    */
-  function renderActiveFormPanel() {
+  function renderActiveFormPanel(preserveFocus = false) {
     const container = document.getElementById("form-panel-container");
     if (!container) {
       return;
@@ -1049,6 +1459,7 @@
       return;
     }
 
+    const focusSnap = preserveFocus ? captureFormFocus(container) : null;
     const s = AppStore.state;
     const secretType = AppStore.showSecrets ? "text" : "password";
     const eyeCaption = AppStore.showSecrets ? "Hide" : "Show";
@@ -1090,6 +1501,14 @@
         )
         .join("");
 
+      const wireOptions = renderSelectOptions(
+        [
+          { value: "genai", label: "genai (Default / ACP)" },
+          { value: "openai", label: "openai (/v1/chat/completions)" },
+        ],
+        gw.wireProtocol
+      );
+
       html += `
         <div class="section-block">
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -1106,14 +1525,11 @@
           <div class="row g-2 mb-2">
             <div class="col-md-7">
               <label class="form-label-sm" for="gw-url">Gateway HTTPS Endpoint URL</label>
-              <input id="gw-url" type="url" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.url)}" placeholder="https://gateway.corp.example.com">
+              <input id="gw-url" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.url)}" placeholder="https://gateway.corp.example.com">
             </div>
             <div class="col-md-5">
               <label class="form-label-sm" for="gw-wire">Wire Protocol</label>
-              <select id="gw-wire" class="form-select form-select-sm">
-                <option value="genai" ${gw.wireProtocol === "genai" ? "selected" : ""}>genai (Default / ACP)</option>
-                <option value="openai" ${gw.wireProtocol === "openai" ? "selected" : ""}>openai (/v1/chat/completions)</option>
-              </select>
+              <select id="gw-wire" class="form-select form-select-sm">${wireOptions}</select>
             </div>
           </div>
 
@@ -1161,11 +1577,18 @@
             <label class="form-label-sm" for="gw-default-model">Default Model ID</label>
             <input id="gw-default-model" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.defaultModelId)}">
           </div>
-          ${modelRows}
+          ${modelRows || '<div class="text-body-secondary small">No models listed in catalog.</div>'}
         </div>
       `;
     } else if (fid === "gateway_env") {
       const ge = s.gateway_env;
+      const envWireOptions = renderSelectOptions(
+        [
+          { value: "genai", label: "genai" },
+          { value: "openai", label: "openai" },
+        ],
+        ge.wireProtocol
+      );
       html += `
         <div class="section-block">
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -1193,10 +1616,7 @@
             </div>
             <div class="col-md-5">
               <label class="form-label-sm" for="env-wire">AGY_LLM_GATEWAY_WIRE_PROTOCOL</label>
-              <select id="env-wire" class="form-select form-select-sm">
-                <option value="genai" ${ge.wireProtocol === "genai" ? "selected" : ""}>genai</option>
-                <option value="openai" ${ge.wireProtocol === "openai" ? "selected" : ""}>openai</option>
-              </select>
+              <select id="env-wire" class="form-select form-select-sm">${envWireOptions}</select>
             </div>
           </div>
           <div class="mb-2">
@@ -1215,6 +1635,34 @@
       `;
     } else if (fid === "cli_settings") {
       const c = s.cli;
+      const showHistoryInput = Boolean(c.includeOptionalUiKeys || c.historySize !== 50);
+      const agentModeOpts = renderSelectOptions(
+        [
+          { value: "plan", label: "plan (Recommended)" },
+          { value: "accept-edits", label: "accept-edits" },
+          { value: "auto", label: "auto" },
+          { value: "", label: '"" (Client Default)' },
+        ],
+        c.agentMode
+      );
+      const toolPermOpts = renderSelectOptions(
+        [
+          { value: "proceed-in-sandbox", label: "proceed-in-sandbox" },
+          { value: "request-review", label: "request-review" },
+          { value: "strict", label: "strict (Zero Auto-Run)" },
+          { value: "always-proceed", label: "always-proceed" },
+        ],
+        c.toolPermission
+      );
+      const artifactOpts = renderSelectOptions(
+        [
+          { value: "asks-for-review", label: "asks-for-review" },
+          { value: "agent-decides", label: "agent-decides" },
+          { value: "always-proceed", label: "always-proceed" },
+        ],
+        c.artifactReviewPolicy
+      );
+
       html += `
         <div class="section-block">
           <div class="section-heading">CLI &amp; VS Code Execution Sandbox</div>
@@ -1222,31 +1670,17 @@
           <div class="row g-2 mb-2">
             <div class="col-sm-6">
               <label class="form-label-sm" for="cli-agent-mode">agentMode</label>
-              <select id="cli-agent-mode" class="form-select form-select-sm">
-                <option value="plan" ${c.agentMode === "plan" ? "selected" : ""}>plan (Recommended)</option>
-                <option value="accept-edits" ${c.agentMode === "accept-edits" ? "selected" : ""}>accept-edits</option>
-                <option value="auto" ${c.agentMode === "auto" ? "selected" : ""}>auto</option>
-                <option value="" ${c.agentMode === "" ? "selected" : ""}>"" (Client Default)</option>
-              </select>
+              <select id="cli-agent-mode" class="form-select form-select-sm">${agentModeOpts}</select>
             </div>
             <div class="col-sm-6">
               <label class="form-label-sm" for="cli-tool-perm">toolPermission</label>
-              <select id="cli-tool-perm" class="form-select form-select-sm">
-                <option value="proceed-in-sandbox" ${c.toolPermission === "proceed-in-sandbox" ? "selected" : ""}>proceed-in-sandbox</option>
-                <option value="request-review" ${c.toolPermission === "request-review" ? "selected" : ""}>request-review</option>
-                <option value="strict" ${c.toolPermission === "strict" ? "selected" : ""}>strict (Zero Auto-Run)</option>
-                <option value="always-proceed" ${c.toolPermission === "always-proceed" ? "selected" : ""}>always-proceed</option>
-              </select>
+              <select id="cli-tool-perm" class="form-select form-select-sm">${toolPermOpts}</select>
             </div>
             <div class="col-sm-6">
               <label class="form-label-sm" for="cli-artifact-review">artifactReviewPolicy</label>
-              <select id="cli-artifact-review" class="form-select form-select-sm">
-                <option value="asks-for-review" ${c.artifactReviewPolicy === "asks-for-review" ? "selected" : ""}>asks-for-review</option>
-                <option value="agent-decides" ${c.artifactReviewPolicy === "agent-decides" ? "selected" : ""}>agent-decides</option>
-                <option value="always-proceed" ${c.artifactReviewPolicy === "always-proceed" ? "selected" : ""}>always-proceed</option>
-              </select>
+              <select id="cli-artifact-review" class="form-select form-select-sm">${artifactOpts}</select>
             </div>
-            <div class="col-sm-6 ${c.includeOptionalUiKeys ? "" : "d-none"}" id="cli-optional-row">
+            <div class="col-sm-6 ${showHistoryInput ? "" : "d-none"}" id="cli-optional-row">
               <label class="form-label-sm" for="cli-history-size">historySize (0 = Ephemeral)</label>
               <input id="cli-history-size" type="number" min="0" max="500" class="form-control form-control-sm" value="${escapeHtml(c.historySize)}">
             </div>
@@ -1264,6 +1698,21 @@
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="cli-opt-ui" ${c.includeOptionalUiKeys ? "checked" : ""}>
               <label class="form-check-label small" for="cli-opt-ui">Include historySize &amp; UI suppression</label>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-3 mt-2 pt-2 border-top ${c.includeOptionalUiKeys ? "" : "d-none"}">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="cli-ui-notif" ${c.notifications ? "checked" : ""}>
+              <label class="form-check-label small" for="cli-ui-notif">notifications</label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="cli-ui-survey" ${c.showFeedbackSurvey ? "checked" : ""}>
+              <label class="form-check-label small" for="cli-ui-survey">showFeedbackSurvey</label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="cli-ui-tips" ${c.showTips ? "checked" : ""}>
+              <label class="form-check-label small" for="cli-ui-tips">showTips</label>
             </div>
           </div>
         </div>
@@ -1295,6 +1744,47 @@
     } else if (fid === "desktop_config") {
       const d = s.desktop;
       const activePerms = s.sync_permissions ? s.cli.permissions : d.permissions;
+      const autoExecOpts = renderSelectOptions(
+        [
+          { value: "CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX", label: "PROCEED_IN_SANDBOX" },
+          { value: "CASCADE_COMMANDS_AUTO_EXECUTION_DISABLED", label: "DISABLED (Require Review)" },
+          { value: "CASCADE_COMMANDS_AUTO_EXECUTION_EAGER", label: "EAGER" },
+        ],
+        d.autoExecutionPolicy
+      );
+      const deskArtOpts = renderSelectOptions(
+        [
+          { value: "ARTIFACT_REVIEW_MODE_ALWAYS", label: "ALWAYS" },
+          { value: "ARTIFACT_REVIEW_MODE_TURBO", label: "TURBO" },
+        ],
+        d.artifactReviewMode
+      );
+      const browserJsOpts = renderSelectOptions(
+        [
+          { value: "BROWSER_JS_EXECUTION_POLICY_DISABLED", label: "DISABLED (Hardened)" },
+          { value: "BROWSER_JS_EXECUTION_POLICY_REQUEST_REVIEW", label: "REQUEST_REVIEW" },
+          { value: "BROWSER_JS_EXECUTION_POLICY_TURBO", label: "TURBO" },
+        ],
+        d.browserJsExecutionPolicy
+      );
+      const nonWsOpts = renderSelectOptions(
+        [
+          { value: "", label: "(Omit — Client Default)" },
+          { value: "NON_WORKSPACE_FILE_ACCESS_POLICY_DISABLED", label: "DISABLED (Workspace Only)" },
+          { value: "NON_WORKSPACE_FILE_ACCESS_POLICY_ENABLED", label: "ENABLED" },
+        ],
+        d.nonWorkspaceFileAccessPolicy || ""
+      );
+      const internetOpts = renderSelectOptions(
+        [
+          { value: "", label: "(Omit — Client Default)" },
+          { value: "INTERNET_ACCESS_POLICY_DISABLED", label: "DISABLED (Air-Gapped)" },
+          { value: "INTERNET_ACCESS_POLICY_ALLOWLIST", label: "ALLOWLIST" },
+          { value: "INTERNET_ACCESS_POLICY_ENABLED", label: "ENABLED" },
+        ],
+        d.internetAccessPolicy || ""
+      );
+
       html += `
         <div class="section-block">
           <div class="section-heading">Desktop App &amp; Self-Hosted Web Hub (userSettings)</div>
@@ -1302,29 +1792,18 @@
           <div class="row g-2 mb-2">
             <div class="col-md-6">
               <label class="form-label-sm" for="desk-auto-exec">autoExecutionPolicy</label>
-              <select id="desk-auto-exec" class="form-select form-select-sm">
-                <option value="CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX" ${d.autoExecutionPolicy === "CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX" ? "selected" : ""}>PROCEED_IN_SANDBOX</option>
-                <option value="CASCADE_COMMANDS_AUTO_EXECUTION_DISABLED" ${d.autoExecutionPolicy === "CASCADE_COMMANDS_AUTO_EXECUTION_DISABLED" ? "selected" : ""}>DISABLED (Require Review)</option>
-                <option value="CASCADE_COMMANDS_AUTO_EXECUTION_EAGER" ${d.autoExecutionPolicy === "CASCADE_COMMANDS_AUTO_EXECUTION_EAGER" ? "selected" : ""}>EAGER</option>
-              </select>
+              <select id="desk-auto-exec" class="form-select form-select-sm">${autoExecOpts}</select>
             </div>
             <div class="col-md-6">
               <label class="form-label-sm" for="desk-artifact">artifactReviewMode</label>
-              <select id="desk-artifact" class="form-select form-select-sm">
-                <option value="ARTIFACT_REVIEW_MODE_ALWAYS" ${d.artifactReviewMode === "ARTIFACT_REVIEW_MODE_ALWAYS" ? "selected" : ""}>ALWAYS</option>
-                <option value="ARTIFACT_REVIEW_MODE_TURBO" ${d.artifactReviewMode === "ARTIFACT_REVIEW_MODE_TURBO" ? "selected" : ""}>TURBO</option>
-              </select>
+              <select id="desk-artifact" class="form-select form-select-sm">${deskArtOpts}</select>
             </div>
           </div>
 
           <div class="row g-2 mb-2">
             <div class="col-md-6">
               <label class="form-label-sm" for="desk-browser-js">browserJsExecutionPolicy</label>
-              <select id="desk-browser-js" class="form-select form-select-sm">
-                <option value="BROWSER_JS_EXECUTION_POLICY_DISABLED" ${d.browserJsExecutionPolicy === "BROWSER_JS_EXECUTION_POLICY_DISABLED" ? "selected" : ""}>DISABLED (Hardened)</option>
-                <option value="BROWSER_JS_EXECUTION_POLICY_REQUEST_REVIEW" ${d.browserJsExecutionPolicy === "BROWSER_JS_EXECUTION_POLICY_REQUEST_REVIEW" ? "selected" : ""}>REQUEST_REVIEW</option>
-                <option value="BROWSER_JS_EXECUTION_POLICY_TURBO" ${d.browserJsExecutionPolicy === "BROWSER_JS_EXECUTION_POLICY_TURBO" ? "selected" : ""}>TURBO</option>
-              </select>
+              <select id="desk-browser-js" class="form-select form-select-sm">${browserJsOpts}</select>
             </div>
             <div class="col-md-6 d-flex align-items-end gap-3 pb-1">
               <div class="form-check form-switch">
@@ -1335,6 +1814,17 @@
                 <input class="form-check-input" type="checkbox" id="desk-net" ${d.sandboxAllowNetwork ? "checked" : ""}>
                 <label class="form-check-label small" for="desk-net">sandboxAllowNetwork</label>
               </div>
+            </div>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label-sm" for="desk-nonws-policy">nonWorkspaceFileAccessPolicy</label>
+              <select id="desk-nonws-policy" class="form-select form-select-sm">${nonWsOpts}</select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-sm" for="desk-internet-policy">internetAccessPolicy</label>
+              <select id="desk-internet-policy" class="form-select form-select-sm">${internetOpts}</select>
             </div>
           </div>
         </div>
@@ -1405,12 +1895,16 @@
             }
 
             <div class="row g-2">
-              <div class="col-6">
-                <label class="form-label-sm">enabledTools (comma-separated)</label>
+              <div class="col-sm-3">
+                <label class="form-label-sm">timeoutSeconds</label>
+                <input type="number" min="1" max="3600" class="form-control form-control-sm mono-input" data-mcp-timeout="${idx}" value="${escapeHtml(srv.timeoutSeconds ?? "")}" placeholder="Omit">
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label-sm">enabledTools</label>
                 <input type="text" class="form-control form-control-sm mono-input" data-mcp-allow="${idx}" value="${escapeHtml((srv.enabledTools || []).join(", "))}">
               </div>
-              <div class="col-6">
-                <label class="form-label-sm">disabledTools (comma-separated)</label>
+              <div class="col-sm-5">
+                <label class="form-label-sm">disabledTools</label>
                 <input type="text" class="form-control form-control-sm mono-input" data-mcp-deny="${idx}" value="${escapeHtml((srv.disabledTools || []).join(", "))}">
               </div>
             </div>
@@ -1444,13 +1938,17 @@
             </div>
           </div>
           <div class="row g-2 ${h.enablePreToolUse ? "" : "d-none"}">
-            <div class="col-md-5">
+            <div class="col-md-4">
               <label class="form-label-sm" for="hook-pre-matcher">Tool Regex Matcher</label>
               <input id="hook-pre-matcher" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.preMatcher)}">
             </div>
-            <div class="col-md-7">
+            <div class="col-md-6">
               <label class="form-label-sm" for="hook-pre-cmd">Guard Command</label>
               <input id="hook-pre-cmd" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.preCommand)}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label-sm" for="hook-pre-timeout">Timeout (s)</label>
+              <input id="hook-pre-timeout" type="number" min="1" max="300" class="form-control form-control-sm mono-input" value="${escapeHtml(h.preTimeout ?? 10)}">
             </div>
           </div>
         </div>
@@ -1466,13 +1964,17 @@
             </div>
           </div>
           <div class="row g-2 ${h.enablePostToolUse ? "" : "d-none"}">
-            <div class="col-md-5">
+            <div class="col-md-4">
               <label class="form-label-sm" for="hook-post-matcher">Tool Regex Matcher</label>
               <input id="hook-post-matcher" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.postMatcher)}">
             </div>
-            <div class="col-md-7">
+            <div class="col-md-6">
               <label class="form-label-sm" for="hook-post-cmd">Audit Command</label>
               <input id="hook-post-cmd" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(h.postCommand)}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label-sm" for="hook-post-timeout">Timeout (s)</label>
+              <input id="hook-post-timeout" type="number" min="1" max="300" class="form-control form-control-sm mono-input" value="${escapeHtml(h.postTimeout ?? 10)}">
             </div>
           </div>
         </div>
@@ -1495,27 +1997,43 @@
       `;
     } else if (fid === "guard_sh" || fid === "guard_ps1") {
       const isPs = fid === "guard_ps1";
+      const scriptText = String(s.scripts?.[fid] || "");
+      const lineCount = scriptText ? scriptText.split("\n").length : 0;
+      const ruleMatches = scriptText.match(/RULE-[A-Z0-9-]+/g) || [];
+      const uniqueRules = Array.from(new Set(ruleMatches));
+
       html += `
         <div class="section-block">
-          <div class="section-heading">${isPs ? "Windows PowerShell" : "Linux / macOS POSIX Bash"} Deterministic Guard</div>
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+            <div class="section-heading mb-0">${isPs ? "Windows PowerShell" : "Linux / macOS POSIX Bash"} Deterministic Guard</div>
+            <span class="badge text-bg-light border mono-input" style="font-size: 0.71rem;">${lineCount} lines · ${uniqueRules.length} policy rule(s)</span>
+          </div>
           <div class="section-desc">
             Edit the full guard script directly in the live code editor on the right. Changes round-trip into your single-file download and MDM <code>.zip</code> bundle.
           </div>
           <ul class="small text-body-secondary mb-2 ps-3">
             <li><strong>Exit Code 0</strong>: Permits compliant tool call and records JSONL SIEM event.</li>
             <li><strong>Exit Code 2</strong>: Hard-blocks violating tool call and surfaces stderr policy reason to the agent.</li>
-            <li><strong>5 Defense Domains</strong>: File deletion, OS credential stores/keys, lateral movement, privilege/lock bypass, and cloud metadata SSRF.</li>
+            <li><strong>Active Rule IDs</strong>: <code>${escapeHtml(uniqueRules.join(", ") || "Custom script")}</code></li>
           </ul>
           <button type="button" id="btn-reset-guard-script" class="btn btn-sm btn-outline-secondary">Reset Script to Canonical Default</button>
         </div>
       `;
-    } else if (fid === "acp_json" || fid === "acp_auth") {
+    } else if (fid === "acp_json") {
       const acp = s.acp;
+      const gw = s.gateway;
+      const acpWireOpts = renderSelectOptions(
+        [
+          { value: "genai", label: "genai (Required by ACP 1.3.0+)" },
+          { value: "openai", label: "openai (Unsupported by ACP)" },
+        ],
+        gw.wireProtocol
+      );
       html += `
         <div class="section-block">
-          <div class="section-heading">JetBrains IDEs &amp; Zed Editor (ACP 1.3.0+)</div>
+          <div class="section-heading">JetBrains IDEs &amp; Zed Editor Server Definition (acp.json)</div>
           <div class="section-desc">
-            ACP servers inherit your Gateway URL, headers, and models from Group 01 and require <code>wireProtocol: "genai"</code> plus <code>{"auth": {"type": "gateway"}}</code>.
+            Configures <code>agent_servers.Antigravity</code> executable, CLI arguments, and inherited Gateway environment variables.
           </div>
           <div class="row g-2 mb-2">
             <div class="col-md-8">
@@ -1523,11 +2041,37 @@
               <input id="acp-cmd" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(acp.command)}">
             </div>
             <div class="col-md-4">
-              <label class="form-label-sm" for="acp-auth-type">ACP Auth Type</label>
-              <select id="acp-auth-type" class="form-select form-select-sm">
-                <option value="gateway" ${acp.authType === "gateway" ? "selected" : ""}>gateway (Required)</option>
-              </select>
+              <label class="form-label-sm" for="acp-args">CLI Arguments (comma-sep)</label>
+              <input id="acp-args" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml((acp.args || ["acp"]).join(", "))}">
             </div>
+          </div>
+          <div class="row g-2">
+            <div class="col-md-7">
+              <label class="form-label-sm" for="acp-gw-url">AGY_LLM_GATEWAY_URL (Synced with Group 01)</label>
+              <input id="acp-gw-url" type="text" class="form-control form-control-sm mono-input" value="${escapeHtml(gw.url)}">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label-sm" for="acp-gw-wire">AGY_LLM_GATEWAY_WIRE_PROTOCOL</label>
+              <select id="acp-gw-wire" class="form-select form-select-sm">${acpWireOpts}</select>
+            </div>
+          </div>
+        </div>
+      `;
+    } else if (fid === "acp_auth") {
+      const acp = s.acp;
+      const authTypeOpts = renderSelectOptions(
+        [{ value: "gateway", label: "gateway (Required for Enterprise Gateway)" }],
+        acp.authType || "gateway"
+      );
+      html += `
+        <div class="section-block">
+          <div class="section-heading">ACP Gateway Auth Selector (~/.gemini/antigravity-acp/settings.json)</div>
+          <div class="section-desc">
+            Instructs the JetBrains &amp; Zed ACP server (<code>1.3.0+</code>) to authenticate via Enterprise Gateway mode instead of interactive OAuth.
+          </div>
+          <div style="max-width: 340px;">
+            <label class="form-label-sm" for="acp-auth-type">ACP Auth Type (auth.type)</label>
+            <select id="acp-auth-type" class="form-select form-select-sm">${authTypeOpts}</select>
           </div>
         </div>
       `;
@@ -1535,6 +2079,9 @@
 
     container.innerHTML = html;
     bindActiveFormEvents(container, fid);
+    if (focusSnap) {
+      restoreFormFocus(container, focusSnap);
+    }
   }
 
   /**
@@ -1552,7 +2099,7 @@
     container.querySelectorAll(".btn-toggle-secret").forEach((btn) => {
       btn.addEventListener("click", () => {
         AppStore.showSecrets = !AppStore.showSecrets;
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
       });
     });
 
@@ -1574,7 +2121,7 @@
       });
       container.querySelector("#gw-omit-key")?.addEventListener("change", (e) => {
         gw.omitApiKeyInMdm = e.target.checked;
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#gw-apikey")?.addEventListener("input", (e) => {
@@ -1592,7 +2139,7 @@
 
       container.querySelector("#btn-add-gw-header")?.addEventListener("click", () => {
         gw.customHeaders.push({ key: "X-Enterprise-Team", value: "Platform" });
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelectorAll("[data-gw-hdr-key]").forEach((inp) => {
@@ -1610,14 +2157,14 @@
       container.querySelectorAll("[data-gw-hdr-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
           gw.customHeaders.splice(Number(btn.dataset.gwHdrDel), 1);
-          renderActiveFormPanel();
+          renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
 
       container.querySelector("#btn-add-gw-model")?.addEventListener("click", () => {
         gw.models.push({ modelId: "gemini-3.8-flash", displayName: "Gemini 3.8 Flash" });
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelectorAll("[data-gw-mdl-id]").forEach((inp) => {
@@ -1635,7 +2182,7 @@
       container.querySelectorAll("[data-gw-mdl-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
           gw.models.splice(Number(btn.dataset.gwMdlDel), 1);
-          renderActiveFormPanel();
+          renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
@@ -1693,11 +2240,28 @@
       });
       container.querySelector("#cli-opt-ui")?.addEventListener("change", (e) => {
         c.includeOptionalUiKeys = e.target.checked;
-        renderActiveFormPanel();
+        if (!c.includeOptionalUiKeys && c.historySize === 50) {
+          c.notifications = false;
+          c.showFeedbackSurvey = false;
+          c.showTips = false;
+        }
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-history-size")?.addEventListener("input", (e) => {
-        c.historySize = Number(e.target.value || 0);
+        c.historySize = e.target.value === "" ? 50 : Number(e.target.value);
+        scheduleFormCompile(false);
+      });
+      container.querySelector("#cli-ui-notif")?.addEventListener("change", (e) => {
+        c.notifications = e.target.checked;
+        scheduleFormCompile(false);
+      });
+      container.querySelector("#cli-ui-survey")?.addEventListener("change", (e) => {
+        c.showFeedbackSurvey = e.target.checked;
+        scheduleFormCompile(false);
+      });
+      container.querySelector("#cli-ui-tips")?.addEventListener("change", (e) => {
+        c.showTips = e.target.checked;
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-sbp-enabled")?.addEventListener("change", (e) => {
@@ -1706,7 +2270,11 @@
           c.sandboxProxyAddress = "http://proxy.internal.example.com:3128";
           c.sandboxProxyCertFile = "/etc/antigravity/certs/corp-root-ca.pem";
         }
-        renderActiveFormPanel();
+        if (!c.sandboxProxyEnabled) {
+          c.sandboxProxyAddress = "";
+          c.sandboxProxyCertFile = "";
+        }
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#cli-sbp-addr")?.addEventListener("input", (e) => {
@@ -1740,6 +2308,14 @@
         d.sandboxAllowNetwork = e.target.checked;
         scheduleFormCompile(false);
       });
+      container.querySelector("#desk-nonws-policy")?.addEventListener("change", (e) => {
+        d.nonWorkspaceFileAccessPolicy = e.target.value;
+        scheduleFormCompile(false);
+      });
+      container.querySelector("#desk-internet-policy")?.addEventListener("change", (e) => {
+        d.internetAccessPolicy = e.target.value;
+        scheduleFormCompile(false);
+      });
       bindPermissionsWidgetEvents(container, "desktop");
     } else if (fid === "browser_allowlist") {
       const addDom = () => {
@@ -1752,7 +2328,8 @@
           s.browser_domains.push(val);
         }
         inp.value = "";
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
+        document.getElementById("input-new-domain")?.focus();
         scheduleFormCompile(false);
       };
       container.querySelector("#btn-add-domain")?.addEventListener("click", addDom);
@@ -1765,7 +2342,7 @@
       container.querySelectorAll("[data-del-domain]").forEach((btn) => {
         btn.addEventListener("click", () => {
           s.browser_domains.splice(Number(btn.dataset.delDomain), 1);
-          renderActiveFormPanel();
+          renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
@@ -1783,7 +2360,7 @@
           disabledTools: [],
           env: {},
         });
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelectorAll("[data-mcp-name]").forEach((inp) => {
@@ -1795,21 +2372,21 @@
       container.querySelectorAll("[data-mcp-transport]").forEach((sel) => {
         sel.addEventListener("change", () => {
           s.mcp_servers[Number(sel.dataset.mcpTransport)].transport = sel.value;
-          renderActiveFormPanel();
+          renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
       container.querySelectorAll("[data-mcp-enabled]").forEach((chk) => {
         chk.addEventListener("change", () => {
           s.mcp_servers[Number(chk.dataset.mcpEnabled)].disabled = !chk.checked;
-          renderActiveFormPanel();
+          renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
       container.querySelectorAll("[data-mcp-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
           s.mcp_servers.splice(Number(btn.dataset.mcpDel), 1);
-          renderActiveFormPanel();
+          renderActiveFormPanel(false);
           scheduleFormCompile(false);
         });
       });
@@ -1831,6 +2408,14 @@
             .split(",")
             .map((x) => x.trim())
             .filter(Boolean);
+          scheduleFormCompile(false);
+        });
+      });
+      container.querySelectorAll("[data-mcp-timeout]").forEach((inp) => {
+        inp.addEventListener("input", () => {
+          const rawVal = inp.value.trim();
+          s.mcp_servers[Number(inp.dataset.mcpTimeout)].timeoutSeconds =
+            rawVal === "" ? null : Number(rawVal);
           scheduleFormCompile(false);
         });
       });
@@ -1856,7 +2441,7 @@
       const h = s.hooks;
       container.querySelector("#hook-pre-en")?.addEventListener("change", (e) => {
         h.enablePreToolUse = e.target.checked;
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-pre-matcher")?.addEventListener("input", (e) => {
@@ -1867,9 +2452,13 @@
         h.preCommand = e.target.value;
         scheduleFormCompile(false);
       });
+      container.querySelector("#hook-pre-timeout")?.addEventListener("input", (e) => {
+        h.preTimeout = Number(e.target.value || 10);
+        scheduleFormCompile(false);
+      });
       container.querySelector("#hook-post-en")?.addEventListener("change", (e) => {
         h.enablePostToolUse = e.target.checked;
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-post-matcher")?.addEventListener("input", (e) => {
@@ -1880,9 +2469,13 @@
         h.postCommand = e.target.value;
         scheduleFormCompile(false);
       });
+      container.querySelector("#hook-post-timeout")?.addEventListener("input", (e) => {
+        h.postTimeout = Number(e.target.value || 10);
+        scheduleFormCompile(false);
+      });
       container.querySelector("#hook-banner-en")?.addEventListener("change", (e) => {
         h.enableSessionStartBanner = e.target.checked;
-        renderActiveFormPanel();
+        renderActiveFormPanel(false);
         scheduleFormCompile(false);
       });
       container.querySelector("#hook-banner-txt")?.addEventListener("input", (e) => {
@@ -1892,22 +2485,43 @@
     } else if (fid === "guard_sh" || fid === "guard_ps1") {
       container.querySelector("#btn-reset-guard-script")?.addEventListener("click", async () => {
         try {
+          await flushPendingSync();
           const fresh = await postJson("/api/preset", {
             preset_id: "balanced",
             dev_user: s.dev_user,
           });
           s.scripts[fid] = fresh.state.scripts[fid];
+          renderActiveFormPanel(false);
           scheduleFormCompile(false);
           showToast("Guard script restored to canonical default", "success");
         } catch (err) {
           showToast(err.message, "danger");
         }
       });
-    } else if (fid === "acp_json" || fid === "acp_auth") {
+    } else if (fid === "acp_json") {
       container.querySelector("#acp-cmd")?.addEventListener("input", (e) => {
         s.acp.command = e.target.value;
         scheduleFormCompile(false);
       });
+      container.querySelector("#acp-args")?.addEventListener("input", (e) => {
+        const parsedArgs = e.target.value
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+        s.acp.args = parsedArgs.length ? parsedArgs : ["acp"];
+        scheduleFormCompile(false);
+      });
+      container.querySelector("#acp-gw-url")?.addEventListener("input", (e) => {
+        s.gateway.url = e.target.value;
+        s.gateway_env.url = e.target.value;
+        scheduleFormCompile(false);
+      });
+      container.querySelector("#acp-gw-wire")?.addEventListener("change", (e) => {
+        s.gateway.wireProtocol = e.target.value;
+        s.gateway_env.wireProtocol = e.target.value;
+        scheduleFormCompile(false);
+      });
+    } else if (fid === "acp_auth") {
       container.querySelector("#acp-auth-type")?.addEventListener("change", (e) => {
         s.acp.authType = e.target.value;
         scheduleFormCompile(false);
@@ -1949,6 +2563,7 @@
       fixAllBtn.classList.toggle("d-none", !(v.fixable_count > 0));
       fixAllBtn.textContent = `Auto-Fix All (${v.fixable_count})`;
     }
+    refreshSyncPillForSelectedFile();
   }
 
   /**
@@ -1984,7 +2599,9 @@
     const editor = document.getElementById("code-editor");
     const content = AppStore.files[AppStore.selectedFileId] || "";
     if (editor) {
-      editor.value = content;
+      if (editor.value !== content) {
+        editor.value = content;
+      }
       updateEditorGutter(content);
     }
   }
@@ -2059,14 +2676,19 @@
         const targetFid = btn.dataset.autofixFid;
         const code = btn.dataset.autofixCode;
         try {
+          await flushPendingSync();
+          AppStore.activeAbortController?.abort();
+          AppStore.syncSeq += 1;
           const res = await postJson("/api/autofix", {
             file_id: targetFid,
             issue_code: code,
             content: AppStore.files[targetFid] || "",
             state: AppStore.state,
           });
+          delete AppStore.unparsedCodeFiles[targetFid];
           AppStore.selectedFileId = targetFid;
           applyServerPayload(res);
+          refreshSyncPillForSelectedFile();
           showToast(`Applied Auto-Fix (${code})`, "success");
         } catch (err) {
           showToast(err.message, "danger");
@@ -2093,6 +2715,51 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Update `AppStore.state.dev_user` and rewrite workspace user home paths in permissions.
+   *
+   * @summary Preserves smooth typing/backspacing in `#input-dev-user` without snapping
+   *   mid-keystroke to `"alice"`, restoring `"alice"` only when blurred empty.
+   * @param {string} rawValue - Raw string value from `#input-dev-user`.
+   * @param {boolean} isBlur - True when triggered on input blur.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function applyWorkstationUserChange(rawValue, isBlur) {
+    const trimmed = rawValue.trim();
+    if (!trimmed && !isBlur) {
+      return;
+    }
+    const nextUser = trimmed || "alice";
+    const oldUser = AppStore.lastDevUser || AppStore.state.dev_user || "alice";
+    if (nextUser === AppStore.state.dev_user && !isBlur) {
+      return;
+    }
+
+    if (oldUser !== nextUser) {
+      const swapUserPaths = (arr) =>
+        (arr || []).map((r) =>
+          r
+            .replace(`/home/${oldUser}/`, `/home/${nextUser}/`)
+            .replace(`/Users/${oldUser}/`, `/Users/${nextUser}/`)
+        );
+      ["allow", "ask", "deny"].forEach((b) => {
+        AppStore.state.cli.permissions[b] = swapUserPaths(AppStore.state.cli.permissions[b]);
+        AppStore.state.desktop.permissions[b] = swapUserPaths(AppStore.state.desktop.permissions[b]);
+      });
+    }
+
+    AppStore.state.dev_user = nextUser;
+    AppStore.lastDevUser = nextUser;
+    if (isBlur) {
+      const userEl = document.getElementById("input-dev-user");
+      if (userEl && userEl.value !== nextUser) {
+        userEl.value = nextUser;
+      }
+    }
+    scheduleFormCompile(true, { keepCurrentUnparsed: true });
   }
 
   /**
@@ -2157,6 +2824,15 @@
 
     // Reset Scope button
     document.getElementById("btn-reset-scope")?.addEventListener("click", () => {
+      clearTimeout(AppStore.codeSyncTimer);
+      clearTimeout(AppStore.formSyncTimer);
+      AppStore.codeSyncTimer = null;
+      AppStore.formSyncTimer = null;
+      AppStore.pendingCodeSync = null;
+      AppStore.pendingFormSync = null;
+      AppStore.activeAbortController?.abort();
+      AppStore.syncSeq += 1;
+      AppStore.unparsedCodeFiles = {};
       AppStore.state.os_list = [];
       AppStore.state.surfaces = [];
       AppStore.state.selected_file_ids = [];
@@ -2168,16 +2844,17 @@
     });
 
     // Step 1: Target OS Multi-Select Checkboxes & Select All / Clear
-    const updateOsFromDom = () => {
+    const updateOsFromDom = async () => {
       const checked = [];
       document.querySelectorAll("[data-os-value]").forEach((chk) => {
         if (chk.checked) {
           checked.push(chk.dataset.osValue);
         }
       });
+      await flushPendingSync();
       AppStore.state.os_list = checked;
       renderStep1Controls();
-      scheduleFormCompile(true);
+      scheduleFormCompile(true, { keepCurrentUnparsed: true });
     };
     document.querySelectorAll("[data-os-value]").forEach((chk) => {
       chk.addEventListener("change", updateOsFromDom);
@@ -2196,16 +2873,17 @@
     });
 
     // Step 1: Antigravity Surface Multi-Select Checkboxes & Select All / Clear
-    const updateSurfacesFromDom = () => {
+    const updateSurfacesFromDom = async () => {
       const checked = [];
       document.querySelectorAll("[data-surface-value]").forEach((chk) => {
         if (chk.checked) {
           checked.push(chk.dataset.surfaceValue);
         }
       });
+      await flushPendingSync();
       AppStore.state.surfaces = checked;
       renderStep1Controls();
-      scheduleFormCompile(true);
+      scheduleFormCompile(true, { keepCurrentUnparsed: true });
     };
     document.querySelectorAll("[data-surface-value]").forEach((chk) => {
       chk.addEventListener("change", updateSurfacesFromDom);
@@ -2224,25 +2902,18 @@
     });
 
     // Step 1: Workstation Username & Permission Sync Select
-    document.getElementById("input-dev-user")?.addEventListener("input", (e) => {
-      const oldUser = AppStore.state.dev_user || "alice";
-      const nextUser = e.target.value.trim() || "alice";
-      AppStore.state.dev_user = nextUser;
-      const swapUserPaths = (arr) =>
-        (arr || []).map((r) =>
-          r
-            .replace(`/home/${oldUser}/`, `/home/${nextUser}/`)
-            .replace(`/Users/${oldUser}/`, `/Users/${nextUser}/`)
-        );
-      ["allow", "ask", "deny"].forEach((b) => {
-        AppStore.state.cli.permissions[b] = swapUserPaths(AppStore.state.cli.permissions[b]);
-        AppStore.state.desktop.permissions[b] = swapUserPaths(AppStore.state.desktop.permissions[b]);
-      });
-      scheduleFormCompile(true);
+    const devUserInput = document.getElementById("input-dev-user");
+    devUserInput?.addEventListener("input", (e) => {
+      applyWorkstationUserChange(e.target.value, false);
+    });
+    devUserInput?.addEventListener("blur", (e) => {
+      applyWorkstationUserChange(e.target.value, true);
     });
 
-    document.getElementById("select-perm-sync")?.addEventListener("change", (e) => {
-      AppStore.state.sync_permissions = e.target.value === "linked";
+    document.getElementById("select-perm-sync")?.addEventListener("change", async (e) => {
+      const nextLinked = e.target.value === "linked";
+      await flushPendingSync();
+      AppStore.state.sync_permissions = nextLinked;
       if (AppStore.state.sync_permissions) {
         AppStore.state.desktop.permissions = JSON.parse(
           JSON.stringify(AppStore.state.cli.permissions)
@@ -2254,7 +2925,17 @@
     // Step 2: Policy Type / Preset Dropdown (placed after Surface selection)
     document.getElementById("preset-selector")?.addEventListener("change", async (e) => {
       const presetId = e.target.value;
+      const presetText = e.target.selectedOptions[0]?.text || presetId;
       try {
+        clearTimeout(AppStore.codeSyncTimer);
+        clearTimeout(AppStore.formSyncTimer);
+        AppStore.codeSyncTimer = null;
+        AppStore.formSyncTimer = null;
+        AppStore.pendingCodeSync = null;
+        AppStore.pendingFormSync = null;
+        AppStore.activeAbortController?.abort();
+        AppStore.syncSeq += 1;
+
         const res = await postJson("/api/preset", {
           preset_id: presetId,
           dev_user: AppStore.state.dev_user,
@@ -2263,32 +2944,38 @@
           surfaces: AppStore.state.surfaces,
           selected_file_ids: AppStore.state.selected_file_ids,
         });
-        applyServerPayload(res);
-        showToast(`Loaded policy preset: ${e.target.selectedOptions[0].text}`, "primary");
+        applyServerPayload(res, { resetUnparsed: true });
+        refreshSyncPillForSelectedFile();
+        showToast(`Loaded policy preset: ${presetText}`, "primary");
       } catch (err) {
         showToast(err.message, "danger");
       }
     });
 
     // Step 2: Target Config Files Select All / Clear
-    document.getElementById("btn-files-select-all")?.addEventListener("click", () => {
+    document.getElementById("btn-files-select-all")?.addEventListener("click", async () => {
+      await flushPendingSync();
       AppStore.state.selected_file_ids = [...AppStore.availableFileIds];
       if (!AppStore.selectedFileId && AppStore.availableFileIds.length > 0) {
         AppStore.selectedFileId = AppStore.availableFileIds[0];
       }
-      scheduleFormCompile(true);
+      scheduleFormCompile(true, { keepCurrentUnparsed: true });
     });
-    document.getElementById("btn-files-clear")?.addEventListener("click", () => {
+    document.getElementById("btn-files-clear")?.addEventListener("click", async () => {
+      await flushPendingSync();
+      AppStore.unparsedCodeFiles = {};
       AppStore.state.selected_file_ids = [];
       AppStore.selectedFileId = "";
       scheduleFormCompile(true);
     });
 
     // Step 2: Currently Editing File single-select dropdown
-    document.getElementById("active-file-selector")?.addEventListener("change", (e) => {
-      AppStore.selectedFileId = e.target.value;
+    document.getElementById("active-file-selector")?.addEventListener("change", async (e) => {
+      const nextFileId = e.target.value;
+      await flushPendingSync();
+      AppStore.selectedFileId = nextFileId;
       renderFileReferenceCard(true);
-      renderActiveFormPanel();
+      renderActiveFormPanel(false);
       renderEditorPane();
       renderValidationDrawer();
     });
@@ -2323,13 +3010,17 @@
     // Auto-Fix All button
     document.getElementById("btn-fix-all")?.addEventListener("click", async () => {
       try {
+        await flushPendingSync();
+        AppStore.activeAbortController?.abort();
+        AppStore.syncSeq += 1;
         const res = await postJson("/api/autofix", {
           file_id: "ALL_FILES",
           issue_code: "ALL",
           files: AppStore.files,
           state: AppStore.state,
         });
-        applyServerPayload(res);
+        applyServerPayload(res, { resetUnparsed: true });
+        refreshSyncPillForSelectedFile();
         showToast("Remediated all fixable validation findings", "success");
       } catch (err) {
         showToast(err.message, "danger");
@@ -2359,33 +3050,20 @@
       });
 
       editor.addEventListener("input", () => {
-        if (!AppStore.selectedFileId) {
+        const editedFileId = AppStore.selectedFileId;
+        if (!editedFileId) {
           return;
         }
         const raw = editor.value;
-        AppStore.files[AppStore.selectedFileId] = raw;
+        AppStore.files[editedFileId] = raw;
         updateEditorGutter(raw);
-        const syncPill = document.getElementById("sync-status-pill");
-        if (syncPill) {
-          syncPill.textContent = "Parsing";
-        }
+        scheduleCodeSync(editedFileId, raw);
+      });
 
-        clearTimeout(AppStore.codeSyncTimer);
-        AppStore.codeSyncTimer = setTimeout(async () => {
-          try {
-            const res = await postJson("/api/sync-code", {
-              file_id: AppStore.selectedFileId,
-              content: raw,
-              state: AppStore.state,
-            });
-            applyServerPayload(res, { skipEditor: true, skipForm: false });
-            if (syncPill) {
-              syncPill.textContent = "Two-Way Synced";
-            }
-          } catch (err) {
-            showToast(err.message, "danger");
-          }
-        }, 300);
+      editor.addEventListener("blur", () => {
+        if (AppStore.pendingCodeSync) {
+          flushPendingSync();
+        }
       });
     }
 
@@ -2399,9 +3077,10 @@
       if (CATALOG_BY_ID[fid].language === "json") {
         try {
           const pretty = `${JSON.stringify(JSON.parse(raw), null, 2)}\n`;
+          delete AppStore.unparsedCodeFiles[fid];
           AppStore.files[fid] = pretty;
           renderEditorPane();
-          editor?.dispatchEvent(new Event("input"));
+          scheduleCodeSync(fid, pretty);
           showToast("Formatted JSON cleanly", "dark");
         } catch (err) {
           showToast(`Cannot format malformed JSON: ${err.message}`, "warning");
@@ -2424,6 +3103,7 @@
 
     // Download single BOM-free file
     document.getElementById("btn-download-single")?.addEventListener("click", async () => {
+      await flushPendingSync();
       const fid = AppStore.selectedFileId;
       const meta = CATALOG_BY_ID[fid];
       if (!meta) {
@@ -2448,6 +3128,7 @@
 
     // Download OS-structured MDM `.zip` bundle (includes only selected files)
     document.getElementById("btn-download-zip")?.addEventListener("click", async () => {
+      await flushPendingSync();
       if (!AppStore.activeFileIds.length) {
         return;
       }
@@ -2509,6 +3190,9 @@
       if (!fileList || !fileList.length) {
         return;
       }
+      await flushPendingSync();
+      AppStore.activeAbortController?.abort();
+      AppStore.syncSeq += 1;
       const fd = new FormData();
       Array.from(fileList).forEach((f) => fd.append("files", f));
       fd.append("state", JSON.stringify(AppStore.state));
@@ -2524,7 +3208,8 @@
             AppStore.selectedFileId = firstId;
           }
         }
-        applyServerPayload(data);
+        applyServerPayload(data, { resetUnparsed: true });
+        refreshSyncPillForSelectedFile();
         closeImportModal();
         showToast(`Imported ${data.imported_files.length} file(s) into Studio`, "success");
       } catch (err) {
@@ -2595,6 +3280,9 @@
         return;
       }
       try {
+        await flushPendingSync();
+        AppStore.activeAbortController?.abort();
+        AppStore.syncSeq += 1;
         const res = await postJson("/api/import", {
           file_id: explicitType,
           raw_text: rawText,
@@ -2604,7 +3292,8 @@
         if (importedId && CATALOG_BY_ID[importedId]) {
           AppStore.selectedFileId = importedId;
         }
-        applyServerPayload(res);
+        applyServerPayload(res, { resetUnparsed: true });
+        refreshSyncPillForSelectedFile();
         closeImportModal();
         showToast(`Imported into ${CATALOG_BY_ID[AppStore.selectedFileId].filename}`, "success");
       } catch (err) {
@@ -2615,11 +3304,15 @@
     // Import Modal: Load Sibling Repository Baseline
     document.getElementById("btn-import-repo-baseline")?.addEventListener("click", async () => {
       try {
+        await flushPendingSync();
+        AppStore.activeAbortController?.abort();
+        AppStore.syncSeq += 1;
         const res = await postJson("/api/import", {
           load_repo_baseline: true,
           state: AppStore.state,
         });
-        applyServerPayload(res, { autoSelectFiles: true });
+        applyServerPayload(res, { autoSelectFiles: true, resetUnparsed: true });
+        refreshSyncPillForSelectedFile();
         closeImportModal();
         showToast("Loaded full 8-module baseline from ../agy-config/configs/", "success");
       } catch (err) {
