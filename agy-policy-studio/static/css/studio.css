@@ -1532,3 +1532,198 @@ body {
   border-left-color: var(--studio-err);
 }
 
+/* Collapsible MCP Server Cards & Bulk Expand/Collapse Toolbar */
+.mcp-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+
+.mcp-bulk-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.mcp-bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  height: 28px;
+  padding: 0 0.58rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--studio-border-strong);
+  background-color: var(--studio-bg-surface);
+  color: var(--studio-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.mcp-bulk-btn:hover:not(:disabled) {
+  background-color: var(--studio-accent-soft);
+  border-color: var(--studio-accent);
+  color: var(--studio-accent);
+}
+
+.mcp-bulk-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mcp-server-card {
+  border: 1px solid var(--studio-border-strong);
+  border-radius: 8px;
+  background-color: var(--studio-bg-surface);
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.mcp-server-card:last-of-type {
+  margin-bottom: 0.25rem;
+}
+
+.mcp-server-card.is-expanded {
+  border-color: var(--studio-accent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.mcp-server-card.has-dup-error {
+  border-color: var(--studio-err);
+}
+
+.mcp-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.44rem 0.62rem;
+  background-color: var(--studio-bg-subtle);
+  min-height: 40px;
+}
+
+.mcp-server-card.is-expanded .mcp-card-header {
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.mcp-card-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.12rem 0.2rem;
+  margin: -0.12rem -0.2rem;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--studio-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mcp-card-toggle:hover .mcp-card-title {
+  color: var(--studio-accent);
+}
+
+.mcp-card-toggle:focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: 2px;
+}
+
+.mcp-card-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--studio-text-muted);
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+
+.mcp-server-card.is-expanded .mcp-card-chevron {
+  transform: rotate(90deg);
+  color: var(--studio-accent);
+}
+
+.mcp-card-title {
+  font-family: var(--studio-font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--studio-text-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 175px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-transport-pill {
+  font-size: 0.68rem;
+  padding: 0.16rem 0.44rem;
+  flex-shrink: 0;
+}
+
+.mcp-card-summary {
+  font-family: var(--studio-font-mono);
+  font-size: 0.72rem;
+  color: var(--studio-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mcp-card-tools-pill {
+  font-size: 0.67rem;
+  font-weight: 600;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 1px solid var(--studio-border);
+  background-color: var(--studio-bg-surface);
+  color: var(--studio-text-secondary);
+}
+
+.mcp-card-tools-pill.tone-warn {
+  background-color: rgba(217, 119, 6, 0.1);
+  border-color: rgba(217, 119, 6, 0.35);
+  color: var(--studio-warn);
+}
+
+.mcp-card-tools-pill.tone-ok {
+  background-color: rgba(21, 128, 61, 0.1);
+  border-color: rgba(21, 128, 61, 0.32);
+  color: var(--studio-ok);
+}
+
+.mcp-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.mcp-enable-label {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--studio-text-muted);
+  min-width: 50px;
+  user-select: none;
+  cursor: pointer;
+}
+
+.mcp-enable-label.is-enabled {
+  color: var(--studio-ok);
+  font-weight: 600;
+}
+
+.mcp-card-body {
+  padding: 0.72rem 0.76rem;
+  background-color: var(--studio-bg-surface);
+}

@@ -1261,3 +1261,48 @@ def test_intuitive_composer_search_and_scoped_validation_ux(client) -> None:
         assert js_marker in js, f"Expected {js_marker} in studio.js"
 
 
+def test_collapsible_mcp_server_cards(client) -> None:
+    """
+    Verify MCP Server Definitions render as collapsible cards with Expand All / Collapse All controls.
+
+    Summary:
+        Ensures `.mcp-server-card`, `.mcp-card-header`, `.mcp-card-toggle`, `.mcp-card-body`,
+        `#btn-mcp-expand-all`, and `#btn-mcp-collapse-all` exist so multiple MCP server definitions
+        stay compact and scannable while remaining expandable individually or in bulk.
+    Parameters:
+        client: Pytest Flask test client fixture.
+    Returns:
+        None.
+    Raises:
+        AssertionError: If collapsible MCP card styles or JS event hooks are missing.
+    """
+    css = client.get("/static/css/studio.css").get_data(as_text=True)
+    js = client.get("/static/js/studio.js").get_data(as_text=True)
+
+    for selector in (
+        ".mcp-toolbar-row",
+        ".mcp-bulk-btn",
+        ".mcp-server-card",
+        ".mcp-card-header",
+        ".mcp-card-toggle",
+        ".mcp-card-chevron",
+        ".mcp-card-summary",
+        ".mcp-card-tools-pill",
+        ".mcp-card-body",
+    ):
+        assert selector in css, f"Expected {selector} in studio.css"
+
+    for js_hook in (
+        "function getMcpExpandedSet(",
+        "function formatMcpEndpointSummary(",
+        "function formatMcpToolsBadge(",
+        "function syncMcpCardHeaderDom(",
+        "btn-mcp-expand-all",
+        "btn-mcp-collapse-all",
+        "data-mcp-toggle=",
+        "data-mcp-body=",
+    ):
+        assert js_hook in js, f"Expected {js_hook} in studio.js"
+
+
+

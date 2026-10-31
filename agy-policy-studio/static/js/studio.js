@@ -102,6 +102,7 @@
     permFilterQuery: "",
     domainFilterQuery: "",
     mcpFilterQuery: "",
+    mcpExpandedIndices: null,
     showSecrets: false,
     lastDevUser: initialState.dev_user || "",
     syncSeq: 0,
@@ -353,6 +354,10 @@
       const isDupe = Boolean(raw) && (counts.get(norm) || 0) > 1;
       const isInvalid = !raw || isDupe;
       inp.classList.toggle("is-invalid", isInvalid);
+      const parentMcpCard = inp.closest(".mcp-server-card");
+      if (parentMcpCard) {
+        parentMcpCard.classList.toggle("has-dup-error", isInvalid);
+      }
       if (isDupe && !seenDupeNorm.has(norm)) {
         seenDupeNorm.add(norm);
         displayDupes.push(raw);
@@ -368,6 +373,104 @@
     } else {
       feedbackEl.textContent = "";
       feedbackEl.classList.add("d-none");
+    }
+  }
+
+  /**
+   * Resolve and prune the set of expanded MCP server card indices.
+   *
+   * @summary Defaults to expanded when only 1 MCP server exists, and collapsed
+   *   summary rows when 2+ MCP servers exist so admins can scan all servers at a glance.
+   * @param {number} totalCount - Total number of MCP servers in `AppStore.state.mcp_servers`.
+   * @returns {Set<number>} Mutable set of expanded 0-based server indices.
+   * @throws {never} Never throws.
+   */
+  function getMcpExpandedSet(totalCount) {
+    if (!(AppStore.mcpExpandedIndices instanceof Set)) {
+      AppStore.mcpExpandedIndices = totalCount === 1 ? new Set([0]) : new Set();
+    }
+    Array.from(AppStore.mcpExpandedIndices).forEach((idx) => {
+      if (!Number.isInteger(idx) || idx < 0 || idx >= totalCount) {
+        AppStore.mcpExpandedIndices.delete(idx);
+      }
+    });
+    return AppStore.mcpExpandedIndices;
+  }
+
+  /**
+   * Format a compact one-line endpoint or executable summary for an MCP server card header.
+   *
+   * @summary Shows `serverUrl` for Remote HTTP servers or `command args...` for Local stdio servers.
+   * @param {Object} srv - MCP server state object.
+   * @returns {string} Human-readable summary text for `.mcp-card-summary`.
+   * @throws {never} Never throws.
+   */
+  function formatMcpEndpointSummary(srv) {
+    if (!srv) {
+      return "";
+    }
+    if (srv.transport === "http") {
+      return String(srv.serverUrl || "").trim() || "(no serverUrl)";
+    }
+    const cmd = String(srv.command || "").trim() || "(no command)";
+    const argsStr = Array.isArray(srv.args) && srv.args.length ? ` ${srv.args.join(" ")}` : "";
+    return `${cmd}${argsStr}`;
+  }
+
+  /**
+   * Compute a compact tool-governance badge summary for an MCP server card header.
+   *
+   * @summary Surfaces wildcard blocks (`Blocked: *`) or allowed/blocked tool counts even when collapsed.
+   * @param {Object} srv - MCP server state object.
+   * @returns {{text: string, tone: string}} Pill label and tone (`"warn"`, `"ok"`, `"neutral"`, or `""`).
+   * @throws {never} Never throws.
+   */
+  function formatMcpToolsBadge(srv) {
+    const allowLen = Array.isArray(srv?.enabledTools) ? srv.enabledTools.length : 0;
+    const denyList = Array.isArray(srv?.disabledTools) ? srv.disabledTools : [];
+    if (denyList.includes("*")) {
+      return { text: "Blocked: *", tone: "warn" };
+    }
+    if (allowLen > 0 && denyList.length > 0) {
+      return { text: `${allowLen} allow · ${denyList.length} block`, tone: "neutral" };
+    }
+    if (allowLen > 0) {
+      return { text: `${allowLen} allowed`, tone: "ok" };
+    }
+    if (denyList.length > 0) {
+      return { text: `${denyList.length} blocked`, tone: "warn" };
+    }
+    return { text: "", tone: "" };
+  }
+
+  /**
+   * Update an MCP server card's header title, endpoint summary, and tool badge in place.
+   *
+   * @summary Keeps the card header synchronized on every keystroke inside an expanded card
+   *   without replacing DOM inputs or losing cursor focus.
+   * @param {HTMLElement} container - Left-pane form container element.
+   * @param {number} idx - 0-based MCP server index.
+   * @param {Object} srv - Updated MCP server state object.
+   * @returns {void} Returns nothing.
+   * @throws {never} Never throws.
+   */
+  function syncMcpCardHeaderDom(container, idx, srv) {
+    if (!container || !srv) {
+      return;
+    }
+    const titleEl = container.querySelector(`[data-mcp-hdr-name="${idx}"]`);
+    if (titleEl) {
+      titleEl.textContent = String(srv.name || "").trim() || "(unnamed)";
+    }
+    const summaryEl = container.querySelector(`[data-mcp-hdr-summary="${idx}"]`);
+    if (summaryEl) {
+      summaryEl.textContent = formatMcpEndpointSummary(srv);
+    }
+    const toolsEl = container.querySelector(`[data-mcp-hdr-tools="${idx}"]`);
+    if (toolsEl) {
+      const badge = formatMcpToolsBadge(srv);
+      toolsEl.textContent = badge.text;
+      toolsEl.className = `mcp-card-tools-pill ${badge.tone ? `tone-${badge.tone}` : "d-none"}`;
     }
   }
 
@@ -849,6 +952,7 @@
   function applyServerPayload(payload, options = {}) {
     if (options.resetUnparsed) {
       AppStore.unparsedCodeFiles = {};
+      AppStore.mcpExpandedIndices = null;
     }
 
     AppStore.state = payload.state;
@@ -2683,6 +2787,7 @@
       `;
     } else if (fid === "mcp_config") {
       const allServers = s.mcp_servers || [];
+      const expandedSet = getMcpExpandedSet(allServers.length);
       const rawMcpQuery = String(AppStore.mcpFilterQuery ?? "").trim();
       const mcpQ = rawMcpQuery.toLowerCase();
       const indexedServers = allServers.map((srv, idx) => ({ srv, idx }));
@@ -2697,69 +2802,104 @@
         ? `Showing ${filteredServers.length} of ${allServers.length}`
         : `${allServers.length}`;
 
+      const visibleExpandedCount = filteredServers.filter(({ idx }) => expandedSet.has(idx)).length;
+      const allVisibleExpanded =
+        filteredServers.length > 0 && visibleExpandedCount === filteredServers.length;
+      const allVisibleCollapsed = filteredServers.length === 0 || visibleExpandedCount === 0;
+
       const showMcpSearch = allServers.length > 1 || Boolean(mcpQ);
-      const mcpSearchToolbar = showMcpSearch
-        ? `<div class="d-flex justify-content-end mb-2">
-             ${buildSearchBoxHtml("input-mcp-search", "btn-clear-mcp-search", AppStore.mcpFilterQuery, "Search MCP servers...")}
+      const showMcpToolbar = allServers.length > 0 || Boolean(mcpQ);
+      const mcpToolbarHtml = showMcpToolbar
+        ? `<div class="mcp-toolbar-row">
+             <div class="mcp-bulk-actions">
+               ${
+                 filteredServers.length > 0
+                   ? `<button type="button" id="btn-mcp-expand-all" class="mcp-bulk-btn" ${allVisibleExpanded ? "disabled" : ""}>&#9662; Expand All</button>
+                      <button type="button" id="btn-mcp-collapse-all" class="mcp-bulk-btn" ${allVisibleCollapsed ? "disabled" : ""}>&#9656; Collapse All</button>`
+                   : ""
+               }
+             </div>
+             ${showMcpSearch ? buildSearchBoxHtml("input-mcp-search", "btn-clear-mcp-search", AppStore.mcpFilterQuery, "Search MCP servers...") : ""}
            </div>`
         : "";
 
       const serversHtml = filteredServers.length
         ? filteredServers
-            .map(
-              ({ srv, idx }) => `
-              <div class="p-2 mb-2 studio-subcard">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                  <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
-                    <input type="text" class="form-control form-control-sm mono-input fw-semibold" style="min-width: 155px; max-width: 220px; flex: 1 1 165px;" data-mcp-name="${idx}" value="${escapeHtml(srv.name)}" placeholder="server_name">
-                    <select class="form-select form-select-sm" style="width: 150px; flex: 0 0 auto;" data-mcp-transport="${idx}">
-                      <option value="stdio" ${srv.transport === "stdio" ? "selected" : ""}>Local stdio</option>
-                      <option value="http" ${srv.transport === "http" ? "selected" : ""}>Remote HTTP</option>
-                    </select>
-                  </div>
-                  <div class="d-flex align-items-center gap-2">
-                    <div class="form-check form-switch mb-0">
-                      <input class="form-check-input" type="checkbox" data-mcp-enabled="${idx}" ${!srv.disabled ? "checked" : ""}>
-                      <label class="form-check-label small">${!srv.disabled ? "Enabled" : "Disabled"}</label>
+            .map(({ srv, idx }) => {
+              const isExpanded = expandedSet.has(idx);
+              const endpointSummary = formatMcpEndpointSummary(srv);
+              const toolBadge = formatMcpToolsBadge(srv);
+              return `
+              <div class="mcp-server-card ${isExpanded ? "is-expanded" : ""}" data-mcp-card="${idx}">
+                <div class="mcp-card-header">
+                  <button type="button" class="mcp-card-toggle" data-mcp-toggle="${idx}" aria-expanded="${isExpanded ? "true" : "false"}" title="${isExpanded ? "Collapse server configuration" : "Expand server configuration"}">
+                    <svg class="mcp-card-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="6 3.5 10.5 8 6 12.5"></polyline>
+                    </svg>
+                    <span class="mcp-card-title" data-mcp-hdr-name="${idx}">${escapeHtml(String(srv.name || "").trim() || "(unnamed)")}</span>
+                    <span class="badge ${srv.transport === "http" ? "studio-badge-primary" : "studio-badge-neutral"} mcp-transport-pill">${srv.transport === "http" ? "Remote HTTP" : "Local stdio"}</span>
+                    <span class="mcp-card-summary" data-mcp-hdr-summary="${idx}">${escapeHtml(endpointSummary)}</span>
+                    <span class="mcp-card-tools-pill ${toolBadge.tone ? `tone-${toolBadge.tone}` : "d-none"}" data-mcp-hdr-tools="${idx}">${escapeHtml(toolBadge.text)}</span>
+                  </button>
+                  <div class="mcp-card-actions">
+                    <div class="form-check form-switch mb-0 d-flex align-items-center gap-1">
+                      <input class="form-check-input mt-0" type="checkbox" id="mcp-en-${idx}" data-mcp-enabled="${idx}" ${!srv.disabled ? "checked" : ""}>
+                      <label class="form-check-label mcp-enable-label ${!srv.disabled ? "is-enabled" : ""}" for="mcp-en-${idx}">${!srv.disabled ? "Enabled" : "Disabled"}</label>
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-danger btn-row-delete" data-mcp-del="${idx}" aria-label="Remove MCP server" title="Remove MCP server">&times;</button>
                   </div>
                 </div>
 
-                ${
-                  srv.transport === "http"
-                    ? `<div class="mb-2">
-                         <div class="studio-field-label-row"><label class="form-label-sm">Remote Endpoint URL (<code>serverUrl</code>)</label></div>
-                         <input type="text" class="form-control form-control-sm mono-input" data-mcp-url="${idx}" value="${escapeHtml(srv.serverUrl)}" placeholder="https://mcp.internal.example.com/mcp/">
-                       </div>`
-                    : `<div class="row g-2 mb-2">
-                         <div class="col-sm-6">
-                           <div class="studio-field-label-row"><label class="form-label-sm">Executable (<code>command</code>)</label></div>
-                           <input type="text" class="form-control form-control-sm mono-input" data-mcp-cmd="${idx}" value="${escapeHtml(srv.command)}" placeholder="/usr/local/bin/mcp_server">
-                         </div>
-                         <div class="col-sm-6">
-                           <div class="studio-field-label-row"><label class="form-label-sm">Arguments (<code>args</code>, comma-sep)</label></div>
-                           <input type="text" class="form-control form-control-sm mono-input" data-mcp-args="${idx}" value="${escapeHtml((srv.args || []).join(", "))}">
-                         </div>
-                       </div>`
-                }
+                <div class="mcp-card-body ${isExpanded ? "" : "d-none"}" data-mcp-body="${idx}">
+                  <div class="row g-2 mb-2">
+                    <div class="col-sm-6">
+                      <div class="studio-field-label-row"><label class="form-label-sm">Server Key (<code>mcpServers.&lt;name&gt;</code>)</label></div>
+                      <input type="text" class="form-control form-control-sm mono-input fw-semibold" data-mcp-name="${idx}" value="${escapeHtml(srv.name)}" placeholder="server_name">
+                    </div>
+                    <div class="col-sm-6">
+                      <div class="studio-field-label-row"><label class="form-label-sm">Transport Protocol</label></div>
+                      <select class="form-select form-select-sm" data-mcp-transport="${idx}">
+                        <option value="stdio" ${srv.transport === "stdio" ? "selected" : ""}>Local stdio</option>
+                        <option value="http" ${srv.transport === "http" ? "selected" : ""}>Remote HTTP</option>
+                      </select>
+                    </div>
+                  </div>
 
-                <div class="row g-2">
-                  <div class="col-sm-4">
-                    <div class="studio-field-label-row"><label class="form-label-sm">Timeout (s)</label></div>
-                    <input type="number" min="1" max="3600" class="form-control form-control-sm mono-input" data-mcp-timeout="${idx}" value="${escapeHtml(srv.timeoutSeconds ?? "")}" placeholder="Omit">
-                  </div>
-                  <div class="col-sm-4">
-                    <div class="studio-field-label-row"><label class="form-label-sm">Allowed Tools (<code>enabledTools</code>)</label></div>
-                    <input type="text" class="form-control form-control-sm mono-input" data-mcp-allow="${idx}" value="${escapeHtml((srv.enabledTools || []).join(", "))}">
-                  </div>
-                  <div class="col-sm-4">
-                    <div class="studio-field-label-row"><label class="form-label-sm">Blocked Tools (<code>disabledTools</code>)</label></div>
-                    <input type="text" class="form-control form-control-sm mono-input" data-mcp-deny="${idx}" value="${escapeHtml((srv.disabledTools || []).join(", "))}">
+                  ${
+                    srv.transport === "http"
+                      ? `<div class="mb-2">
+                           <div class="studio-field-label-row"><label class="form-label-sm">Remote Endpoint URL (<code>serverUrl</code>)</label></div>
+                           <input type="text" class="form-control form-control-sm mono-input" data-mcp-url="${idx}" value="${escapeHtml(srv.serverUrl)}" placeholder="https://mcp.internal.example.com/mcp/">
+                         </div>`
+                      : `<div class="row g-2 mb-2">
+                           <div class="col-sm-6">
+                             <div class="studio-field-label-row"><label class="form-label-sm">Executable (<code>command</code>)</label></div>
+                             <input type="text" class="form-control form-control-sm mono-input" data-mcp-cmd="${idx}" value="${escapeHtml(srv.command)}" placeholder="/usr/local/bin/mcp_server">
+                           </div>
+                           <div class="col-sm-6">
+                             <div class="studio-field-label-row"><label class="form-label-sm">Arguments (<code>args</code>, comma-sep)</label></div>
+                             <input type="text" class="form-control form-control-sm mono-input" data-mcp-args="${idx}" value="${escapeHtml((srv.args || []).join(", "))}">
+                           </div>
+                         </div>`
+                  }
+
+                  <div class="row g-2">
+                    <div class="col-sm-4">
+                      <div class="studio-field-label-row"><label class="form-label-sm">Timeout (s)</label></div>
+                      <input type="number" min="1" max="3600" class="form-control form-control-sm mono-input" data-mcp-timeout="${idx}" value="${escapeHtml(srv.timeoutSeconds ?? "")}" placeholder="Omit">
+                    </div>
+                    <div class="col-sm-4">
+                      <div class="studio-field-label-row"><label class="form-label-sm">Allowed Tools (<code>enabledTools</code>)</label></div>
+                      <input type="text" class="form-control form-control-sm mono-input" data-mcp-allow="${idx}" value="${escapeHtml((srv.enabledTools || []).join(", "))}">
+                    </div>
+                    <div class="col-sm-4">
+                      <div class="studio-field-label-row"><label class="form-label-sm">Blocked Tools (<code>disabledTools</code>)</label></div>
+                      <input type="text" class="form-control form-control-sm mono-input" data-mcp-deny="${idx}" value="${escapeHtml((srv.disabledTools || []).join(", "))}">
+                    </div>
                   </div>
                 </div>
-              </div>`
-            )
+              </div>`;
+            })
             .join("")
         : mcpQ
           ? `<div class="text-body-secondary small p-2 d-flex align-items-center flex-wrap gap-2">
@@ -2778,9 +2918,9 @@
               </div>
               <div class="section-desc mb-0">Keep lazy loading (default) so <code>permissions.deny</code> <code>mcp(...)</code> rules apply inside <code>call_mcp_tool</code>.</div>
             </div>
-            <button type="button" id="btn-add-mcp" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.75rem;">+ Add Server</button>
+            <button type="button" id="btn-add-mcp" class="btn btn-sm btn-primary fw-semibold py-1 px-2" style="font-size:0.75rem;">+ Add Server</button>
           </div>
-          ${mcpSearchToolbar}
+          ${mcpToolbarHtml}
           ${serversHtml}
           <div id="mcp-name-feedback" class="text-danger small mt-1 d-none"></div>
         </div>
@@ -3353,6 +3493,75 @@
       container.querySelector("#btn-clear-mcp-search")?.addEventListener("click", clearMcpSearch);
       container.querySelector("#btn-empty-clear-mcp-search")?.addEventListener("click", clearMcpSearch);
 
+      const syncBulkExpandButtons = () => {
+        const cardEls = Array.from(container.querySelectorAll(".mcp-server-card[data-mcp-card]"));
+        const expSet = getMcpExpandedSet((getState().mcp_servers || []).length);
+        const visibleOpen = cardEls.filter((el) => expSet.has(Number(el.dataset.mcpCard))).length;
+        const expandAllBtn = container.querySelector("#btn-mcp-expand-all");
+        const collapseAllBtn = container.querySelector("#btn-mcp-collapse-all");
+        if (expandAllBtn) {
+          expandAllBtn.disabled = cardEls.length === 0 || visibleOpen === cardEls.length;
+        }
+        if (collapseAllBtn) {
+          collapseAllBtn.disabled = cardEls.length === 0 || visibleOpen === 0;
+        }
+      };
+
+      container.querySelectorAll("[data-mcp-toggle]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.dataset.mcpToggle);
+          const servers = getState().mcp_servers || [];
+          const expSet = getMcpExpandedSet(servers.length);
+          const nextOpen = !expSet.has(idx);
+          if (nextOpen) {
+            expSet.add(idx);
+          } else {
+            expSet.delete(idx);
+          }
+          const cardEl = container.querySelector(`[data-mcp-card="${idx}"]`);
+          const bodyEl = container.querySelector(`[data-mcp-body="${idx}"]`);
+          cardEl?.classList.toggle("is-expanded", nextOpen);
+          bodyEl?.classList.toggle("d-none", !nextOpen);
+          btn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+          btn.title = nextOpen ? "Collapse server configuration" : "Expand server configuration";
+          syncBulkExpandButtons();
+        });
+      });
+
+      container.querySelector("#btn-mcp-expand-all")?.addEventListener("click", () => {
+        const servers = getState().mcp_servers || [];
+        const expSet = getMcpExpandedSet(servers.length);
+        container.querySelectorAll(".mcp-server-card[data-mcp-card]").forEach((cardEl) => {
+          const idx = Number(cardEl.dataset.mcpCard);
+          expSet.add(idx);
+          cardEl.classList.add("is-expanded");
+          container.querySelector(`[data-mcp-body="${idx}"]`)?.classList.remove("d-none");
+          const tBtn = container.querySelector(`[data-mcp-toggle="${idx}"]`);
+          if (tBtn) {
+            tBtn.setAttribute("aria-expanded", "true");
+            tBtn.title = "Collapse server configuration";
+          }
+        });
+        syncBulkExpandButtons();
+      });
+
+      container.querySelector("#btn-mcp-collapse-all")?.addEventListener("click", () => {
+        const servers = getState().mcp_servers || [];
+        const expSet = getMcpExpandedSet(servers.length);
+        container.querySelectorAll(".mcp-server-card[data-mcp-card]").forEach((cardEl) => {
+          const idx = Number(cardEl.dataset.mcpCard);
+          expSet.delete(idx);
+          cardEl.classList.remove("is-expanded");
+          container.querySelector(`[data-mcp-body="${idx}"]`)?.classList.add("d-none");
+          const tBtn = container.querySelector(`[data-mcp-toggle="${idx}"]`);
+          if (tBtn) {
+            tBtn.setAttribute("aria-expanded", "false");
+            tBtn.title = "Expand server configuration";
+          }
+        });
+        syncBulkExpandButtons();
+      });
+
       const updateMcpNameFeedback = () =>
         refreshUniqueKeyFeedback(
           container,
@@ -3365,6 +3574,7 @@
 
       container.querySelector("#btn-add-mcp")?.addEventListener("click", () => {
         const servers = getState().mcp_servers;
+        const expSet = getMcpExpandedSet(servers.length);
         const uniqueServerName = nextUniqueIdentifier(
           servers.map((srv) => srv.name),
           "",
@@ -3382,10 +3592,18 @@
           disabledTools: [],
           env: {},
         });
+        const newIdx = servers.length - 1;
+        expSet.add(newIdx);
         if (AppStore.mcpFilterQuery.trim()) {
           AppStore.mcpFilterQuery = "";
         }
         renderActiveFormPanel(false);
+        const nameInp = container.querySelector(`[data-mcp-name="${newIdx}"]`);
+        if (nameInp) {
+          nameInp.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          nameInp.focus();
+          nameInp.select();
+        }
         scheduleFormCompile(false);
       });
       container.querySelectorAll("[data-mcp-name]").forEach((inp) => {
@@ -3394,6 +3612,7 @@
           const servers = getState().mcp_servers;
           if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
             servers[idx].name = inp.value;
+            syncMcpCardHeaderDom(container, idx, servers[idx]);
             updateMcpNameFeedback();
             scheduleFormCompile(false);
           }
@@ -3405,6 +3624,7 @@
           const servers = getState().mcp_servers;
           if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
             servers[idx].transport = sel.value;
+            getMcpExpandedSet(servers.length).add(idx);
             renderActiveFormPanel(false);
             scheduleFormCompile(false);
           }
@@ -3428,6 +3648,17 @@
           if (!Array.isArray(servers) || !Number.isInteger(idx) || idx < 0 || idx >= servers.length) {
             return;
           }
+          if (AppStore.mcpExpandedIndices instanceof Set) {
+            const shifted = new Set();
+            AppStore.mcpExpandedIndices.forEach((openIdx) => {
+              if (openIdx < idx) {
+                shifted.add(openIdx);
+              } else if (openIdx > idx) {
+                shifted.add(openIdx - 1);
+              }
+            });
+            AppStore.mcpExpandedIndices = shifted;
+          }
           servers.splice(idx, 1);
           renderActiveFormPanel(false);
           scheduleFormCompile(false);
@@ -3439,6 +3670,7 @@
           const servers = getState().mcp_servers;
           if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
             servers[idx].serverUrl = inp.value;
+            syncMcpCardHeaderDom(container, idx, servers[idx]);
             scheduleFormCompile(false);
           }
         });
@@ -3449,6 +3681,7 @@
           const servers = getState().mcp_servers;
           if (Array.isArray(servers) && Number.isInteger(idx) && idx >= 0 && idx < servers.length) {
             servers[idx].command = inp.value;
+            syncMcpCardHeaderDom(container, idx, servers[idx]);
             scheduleFormCompile(false);
           }
         });
@@ -3462,6 +3695,7 @@
               .split(",")
               .map((x) => x.trim())
               .filter(Boolean);
+            syncMcpCardHeaderDom(container, idx, servers[idx]);
             scheduleFormCompile(false);
           }
         });
@@ -3486,6 +3720,7 @@
               .split(",")
               .map((x) => x.trim())
               .filter(Boolean);
+            syncMcpCardHeaderDom(container, idx, servers[idx]);
             scheduleFormCompile(false);
           }
         });
@@ -3499,6 +3734,7 @@
               .split(",")
               .map((x) => x.trim())
               .filter(Boolean);
+            syncMcpCardHeaderDom(container, idx, servers[idx]);
             scheduleFormCompile(false);
           }
         });
@@ -4038,6 +4274,7 @@
       AppStore.permFilterQuery = "";
       AppStore.domainFilterQuery = "";
       AppStore.mcpFilterQuery = "";
+      AppStore.mcpExpandedIndices = null;
       AppStore.state.os_list = [];
       AppStore.state.surfaces = [];
       AppStore.state.selected_file_ids = [];
