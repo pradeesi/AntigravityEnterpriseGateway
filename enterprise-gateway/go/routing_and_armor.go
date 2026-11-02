@@ -630,6 +630,7 @@ func SanitizePromptInline(
 						Data struct {
 							Text string `json:"text"`
 						} `json:"data"`
+						InfoTypes []string `json:"infoTypes"`
 					} `json:"deidentifyResult"`
 				} `json:"sdpFilterResult"`
 			} `json:"filterResults"`
@@ -646,6 +647,11 @@ func SanitizePromptInline(
 				fr.PiAndJailbreakFilterResult.MatchState == "MATCH_FOUND" ||
 				fr.MaliciousUriFilterResult.MatchState == "MATCH_FOUND" {
 				return true, "Blocked by Google Cloud Model Armor security filter (RAI, CSAM, Prompt Injection/Jailbreak, or Malicious URI).", "", nil
+			}
+			for _, it := range fr.SdpFilterResult.DeidentifyResult.InfoTypes {
+				if strings.HasPrefix(it, "CUSTOM_") {
+					return true, "Blocked by Google Cloud Model Armor custom enterprise security rule (prohibited offensive/evasion activity detected).", "", nil
+				}
 			}
 			if redacted := fr.SdpFilterResult.DeidentifyResult.Data.Text; redacted != "" {
 				if strings.Contains(redacted, "[CUSTOM_") {

@@ -34,7 +34,7 @@ This repository is organized into **four self-contained, block-documented module
 
 | Pillar | Folder | Primary Responsibility |
 | :--- | :--- | :--- |
-| **1. Enterprise Gateway & AI Firewall** | [`./enterprise-gateway/`](./enterprise-gateway/) | **Python 3.12 (`FastAPI`)** and **Go 1.24 (`net/http`)** reverse proxies for **Cloud Run** & **GKE**, paired with **Google Cloud Model Armor** and **Cloud Sensitive Data Protection (SDP / DLP)** templates (`25` PII/PCI/Credential InfoTypes + `8` custom security domain detectors). |
+| **1. Enterprise Gateway & AI Firewall** | [`./enterprise-gateway/`](./enterprise-gateway/) | **Python 3.12 (`FastAPI`)** and **Go 1.24 (`net/http`)** reverse proxies for **Cloud Run** & **GKE**, paired with **Google Cloud Model Armor** and **Cloud Sensitive Data Protection (SDP / DLP)** templates (`25` PII/PCI/Credential InfoTypes + `14` custom security domain detectors). |
 | **2. Client Workstation VMs on GCP** | [`./vm-provisioning/`](./vm-provisioning/) | Automated **Google Compute Engine (GCE)** provisioning and reference-counted teardown for **Ubuntu 22.04 LTS** and **Windows Server 2022** client VMs pre-loaded with vanilla Antigravity CLI (`agy`), Desktop App / Web UI (`:4400`), and VS Code (`Google.google-antigravity`). |
 | **3. Cross-OS MDM & Client Hardening** | [`./agy-config/`](./agy-config/) | **8 numbered policy modules** (`admin_settings.json`, `settings.json`, `config.json`, `browserAllowlist.txt`, `mcp_config.json`, `hooks.json`, `agy_security_guard.{sh,ps1}`, and ACP IDE configs), each with its own dedicated `README.md`, keyword schema table, and kernel immutability scripts (`chattr +i`, `chflags schg`, `icacls /deny`). |
 | **4. Admin Policy Studio Web App** | [`./agy-policy-studio/`](./agy-policy-studio/) | Stateless **Python Flask + Bootstrap 5.3** Split-Pane web studio (Light/Dark theme) to visually author, import, validate, 1-click Auto-Fix, and download BOM-free single files or OS-structured MDM `.zip` bundles across Linux, macOS, and Windows. |
@@ -62,6 +62,7 @@ This repository is organized into **four self-contained, block-documented module
 | **Admin Guide: Configure an Enterprise Gateway** | https://docs.cloud.google.com/gemini/enterprise/docs/ai-developer-tools/deploy-enterprise-gateway?hl=en |
 | **Developer Guide: Connect Antigravity to an Enterprise Gateway** | https://docs.cloud.google.com/gemini/enterprise/docs/ai-developer-tools/connect-enterprise-gateway?hl=en |
 | **Bundled Quickstart & Official Reference Guide (Local Copy)** | [`./Antigravity_Enterprise_Gateway_Quickstart_Guide.md`](./Antigravity_Enterprise_Gateway_Quickstart_Guide.md) |
+| **Workstation Settings Scope & Minimal-Baseline Verification Report** | [`./agy-config/SETTINGS_SCOPE_VERIFICATION_REPORT.md`](./agy-config/SETTINGS_SCOPE_VERIFICATION_REPORT.md) |
 | **Google Cloud Model Armor Overview** | https://cloud.google.com/security-command-center/docs/model-armor-overview |
 | **Sensitive Data Protection (Cloud DLP) InfoTypes** | https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference |
 
@@ -103,7 +104,7 @@ flowchart TB
 
     subgraph Zone3["Zone 3: Google Cloud Platform Services"]
         SM["Secret Manager\n(agy-gateway-api-key)"]
-        Armor["Model Armor + Cloud SDP\n(modelarmor.REGION.rep.googleapis.com)\n- Prompt Injection / Jailbreak / Malicious URI\n- 25 PCI/Cred/PII Redaction + 8 CUSTOM_SEC_*"]
+        Armor["Model Armor + Cloud SDP\n(modelarmor.REGION.rep.googleapis.com)\n- Prompt Injection / Jailbreak / Malicious URI\n- 25 PCI/Cred/PII Redaction + 14 CUSTOM_SEC_*"]
         Vertex["Gemini Enterprise Agent Platform\n(aiplatform.googleapis.com)\n- Gemini 4 Argon / 3.1 Pro / 3.8 Flash\n- PAYG Consumption Billing"]
         Audit["Cloud Logging & Audit Logs\n- X-Cost-Center & X-Corporate-BU\n- Attribution Verification"]
     end
@@ -201,9 +202,9 @@ AntigravityEnterpriseGateway/
 │   │   └── Dockerfile                              # Hardened python:3.12-slim non-root container image
 │   └── model-armor-sdp/                            # Google Cloud Model Armor & Cloud SDP Security Module
 │       ├── README.md                               # Threat-domain coverage matrix & standalone CLI reference
-│       ├── model_armor_manager.sh                  # Provision, 5-test live verification & ordered deprovision CLI
+│       ├── model_armor_manager.sh                  # Provision, 9-test live verification & ordered deprovision CLI
 │       └── templates/
-│           ├── sdp_inspect_template.json           # 25 built-in PCI/Cred/PII InfoTypes + 8 CUSTOM_SEC_* regexes
+│           ├── sdp_inspect_template.json           # 25 built-in PCI/Cred/PII InfoTypes + 14 CUSTOM_SEC_* regexes
 │           ├── sdp_deidentify_template.json        # Cloud SDP [INFOTYPE] masking transformation rules
 │           └── model_armor_filters.json            # RAI, Prompt Injection, Jailbreak & Malicious URI thresholds
 │

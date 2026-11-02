@@ -192,7 +192,7 @@ Options:
   --enable-armor=true|false     Provision & enable Model Armor + Cloud SDP (default: ${ENABLE_MODEL_ARMOR})
   --skip-armor                  Shortcut for --enable-armor=false
   --armor-mode=inline|native    Model Armor enforcement mode (default: ${MODEL_ARMOR_MODE})
-  --skip-tests                  Skip the 5 live Model Armor verification tests
+  --skip-tests                  Skip the 9 live Model Armor verification tests
   --non-interactive             Accept settings.env / CLI values without interactive prompts
   --help, -h                    Show this help message
 EOF

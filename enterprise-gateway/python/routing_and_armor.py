@@ -661,12 +661,15 @@ async def sanitize_prompt_inline(
 
             sdp_res = fr.get("sdpFilterResult", {})
             if isinstance(sdp_res, dict):
-                redacted = (
-                    sdp_res.get("deidentifyResult", {})
-                    .get("data", {})
-                    .get("text", "")
+                deid_res = sdp_res.get("deidentifyResult", {})
+                if not isinstance(deid_res, dict):
+                    deid_res = {}
+                redacted = deid_res.get("data", {}).get("text", "")
+                info_types = deid_res.get("infoTypes", [])
+                has_custom_infotype = isinstance(info_types, list) and any(
+                    str(it).startswith("CUSTOM_") for it in info_types
                 )
-                if "[CUSTOM_" in redacted:
+                if "[CUSTOM_" in redacted or has_custom_infotype:
                     return (
                         True,
                         "Blocked by Google Cloud Model Armor custom enterprise security rule (prohibited offensive/evasion activity detected).",

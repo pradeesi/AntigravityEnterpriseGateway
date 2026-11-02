@@ -2,7 +2,7 @@
   "templateId": "agy-pci-creds-pii-inspect",
   "inspectTemplate": {
     "displayName": "Antigravity Broad-Spectrum Enterprise Security, PCI, Credentials & PII Inspector",
-    "description": "Broad-spectrum enterprise detectors for PCI, credentials, PII, and 8 security domains (Recon, Vuln/Pentest, Privesc, DoS/DDoS, Evasion/Malware, Ransomware, Phishing/Spoofing, Website Cloning/Copying).",
+    "description": "Broad-spectrum detectors for PCI, credentials, PII, and 14 security domains (Recon, Vuln/Pentest, Privesc, DoS, Evasion, Ransomware, Phishing, Cloning, Impersonation, Cleartext/DLP Bypass, Secret File Read, File Hunt, File Encrypt, File Delete).",
     "inspectConfig": {
       "minLikelihood": "POSSIBLE",
       "includeQuote": true,
@@ -80,7 +80,7 @@
           "infoType": {"name": "CUSTOM_SEC_PHISHING_SPOOFING_AND_EXFILTRATION"},
           "likelihood": "VERY_LIKELY",
           "regex": {
-            "pattern": "(?i)(\\b(email\\s+spoof(ing)?|sender\\s+spoof(ing)?|arp\\s+spoof(ing)?|dns\\s+spoof(ing)?|dns\\s+tunnel(ing)?|credential\\s+harvest(ing)?|evilginx|gophish|setoolkit|data\\s+exfiltration|malicious\\s+extension)\\b|send(ing)?\\s+([a-z0-9_-]+\\s+){0,3}(email|mail|message)\\s+on\\s+behalf\\s+of\\s+another\\s+user|spoof(ed|ing)?\\s+([a-z0-9_-]+\\s+){0,3}(from\\s+header|sender|email|domain)|clone\\s+([a-z0-9_-]+\\s+){0,4}(dlp|login|portal|corporate|internal)\\s+([a-z0-9_-]+\\s+){0,2}(website|site|page)|host(ing)?\\s+([a-z0-9_-]+\\s+){0,4}\\.(bat|cmd|vbs|vbe|ps1|psm1|hta|scr|pif|exe|dll|msi|cpl|wsf)\\b)"
+            "pattern": "(?i)(\\b(email\\s+spoof(ing)?|sender\\s+spoof(ing)?|arp\\s+spoof(ing)?|dns\\s+spoof(ing)?|dns\\s+tunnel(ing)?|credential\\s+harvest(ing)?|business\\s+email\\s+compromise|ceo\\s+fraud|evilginx|gophish|setoolkit|data\\s+exfiltration|malicious\\s+extension)\\b|(spoof\\w*|forg\\w+|fak\\w+|falsif\\w+|manipulat\\w+|overrid\\w+)\\s+([a-z0-9_-]+\\s+){0,3}(from\\s+(header|address|field)|reply-to|return-path|envelope\\s+sender|sender(\\s+address|\\s+email|\\s+identity)?|email|domain)|\\b(impersonat\\w*|(masquerad|pos)\\w*\\s+as|pretend\\w*\\s+to\\s+be)\\s+(\\S*@\\S+\\.\\w+|another\\s+(user|person|employee|colleague)|the\\s+(ceo|cfo|cto|hr|manager|director|admin|executive)|[a-z]+(\\s+[a-z]+)?\\s+(and|to)\\s+(send|write|draft|(e-?)?mail|message))|clone\\s+([a-z0-9_-]+\\s+){0,4}(dlp|login|portal|corporate|internal)\\s+([a-z0-9_-]+\\s+){0,2}(website|site|page)|host(ing)?\\s+([a-z0-9_-]+\\s+){0,4}\\.(bat|cmd|vbs|vbe|ps1|psm1|hta|scr|pif|exe|dll|msi|cpl|wsf)\\b)"
           }
         },
         {
@@ -88,6 +88,48 @@
           "likelihood": "VERY_LIKELY",
           "regex": {
             "pattern": "(?i)(\\b(clone|cloning|copy|copying|mirror|mirroring|replicate|replicating|recreate|recreating|duplicate|duplicating|rip|ripping|scrape|scraping|imitate|imitating|spoof|spoofing)\\s+(of\\s+)?([a-z0-9_/-]+\\s+){0,5}(website|websites|webpage|webpages|web\\s+page|web\\s+site|site|sites|homepage|home\\s+page|landing\\s+page|login\\s+page|search\\s+page|portal|frontend|ui|https?://[^\\s'>?]+|(www\\.)?[a-z0-9-]+(\\.[a-z0-9-]+)*\\.(com|org|net|edu|gov|mil|io|co|ai|app|dev|cloud|gg|me|info|biz|us|uk|eu|de|fr|in|jp|cn|br|au|ca|nl|es|it|ch|se|no|goog|google))\\b|\\b(website|webpage|web\\s+page|site|homepage|landing\\s+page)\\s+(clone|cloner|cloning|copy|copier|mirror|replica|recreation|ripper|scraper|scraping)\\b|\\b(httrack|webhttrack|pywebcopy|sitesucker|teleport\\s+pro|wget\\s+[^']*(--mirror|--page-requisites|--convert-links)))"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_EMAIL_AND_IDENTITY_IMPERSONATION"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\bon\\s+(behalf\\s+of\\s+\\S*@\\S+\\.\\w+|\\S*@\\S+\\w[\\]>)'\"`]*'s\\s+behalf)|\\b((send|writ|draft|compos|dispatch|deliver|forward|reply|post|broadcast|notif|invit)\\w*\\b[^.!?\\n]{0,80}\\b((e-?)?mail|message|msg|memo|note|letter|invit(e|ation)|notification|chat|dm|slack|teams|gmail|outlook)s?|((e-?)?mail|messag|dm|reply|forward)\\w*)\\b[^.!?\\n]{0,60}\\bon\\s+(behalf\\s+of\\b|\\S+'s\\s+behalf)|\\bon\\s+(behalf\\s+of\\s+\\S+|\\S+'s\\s+behalf)[^.!?\\n]{0,60}\\b(send|writ|draft|compos|dispatch|forward|reply|(e-?)?mail|messag|invit)\\w*\\b|\\b(send|writ|draft|compos|forward|reply|(e-?)?mail|messag)\\w*\\b[^.!?\\n]{0,60}\\b((as|from|using|(in|under)\\s+the\\s+(name|identity|account)\\s+of)\\s+(\\S*@\\S+\\.\\w+|another\\s+(user|person|employee|account)|someone\\s+else)|(pretend\\w*\\s+to\\s+be|(pos|masquerad)\\w*\\s+as|impersonat\\w*)\\s+\\S))"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_CLEARTEXT_EXPOSURE_AND_DLP_BYPASS"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(read|open|load|cat|view|show|display|print|output|return|reveal|expose|dump|extract|get|give|list)\\w*\\b[^.!?\\n]{0,75}\\b(in\\s+(clear|plain)[- ]?text|un(redact|mask|censor|filter)\\w*|without\\s+(any\\s+)?(redact|mask|censor|filter|sanitiz|dlp)\\w*)|\\b(in\\s+(clear|plain)[- ]?text|un(redact|mask)\\w*|without\\s+(redact|mask|filter|sanitiz)\\w*)\\b[^.!?\\n]{0,75}\\b(read|open|cat|view|show|display|print|output|return|reveal|expose|dump|extract)\\w*|\\b(do\\s*n'?t|do\\s+not|never|skip|avoid|disable|turn\\s+off|stop)\\s+(any\\s+)?(redact|mask|censor|sanitiz|obfuscat)\\w*|\\b(bypass|evad|circumvent|defeat|trick|override|disabl|ignor|skip|(get|work)\\s+around)\\w*\\b[^.!?\\n]{0,45}\\b(dlp|data\\s+loss\\s+prevention|sdp|sensitive\\s+data\\s+protection|model\\s+armor|guardrail|redaction|masking|(safety|content)\\s+filter)s?|\\b(base64|hex|rot13|obfuscat\\w*|space\\s+out|split|encode)\\b[^.!?\\n]{0,50}\\b(dlp|sdp|redact\\w*|mask\\w*|model\\s+armor|pci|pii|credit\\s+card|ssn|secret|credential)s?)"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_SENSITIVE_DATA_AND_SECRET_FILE_READ"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)\\b(read|open|load|cat|view|dump|extract|print|show|display|expose|leak|exfiltrat)\\w*\\b[^.!?\\n]{0,60}(\\b(pci|pii|phi|credit\\s+card|cardholder|cvv|ssn|social\\s+security|iban|bank\\s+account|passport|password|credential|(private|secret|api)\\s+key)s?\\s+(data|info\\w*|numbers?|records?|details|entries|values|hashes|file|files|from\\b|in\\b)|(\\.env|\\.pem|\\.key|\\.pfx|\\.p12|\\.kdbx|id_rsa|id_ed25519|/etc/(shadow|passwd)|\\.aws/credentials|\\.npmrc|\\.netrc|\\.pgpass|\\.kube/config|cookies\\.sqlite)\\b)"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_PERSONAL_FILE_DISCOVERY_AND_SCAN"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(lost|forgot\\w*|misplac\\w*|find\\w*|locat\\w*|recover\\w*|scan\\w*|search\\w*|check\\w*)\\b[^.!?\\n]{0,70}\\b(saves?|saved|stor\\w+|contain\\w*|hold\\w*|keep\\w*|has)\\b[^.!?\\n]{0,30}\\b((personal|sensitive|private|confidential|financial|medical|tax|bank\\w*)\\s+(info\\w*|data|details|records?|files?|docs?)|pii|pci|passwords?|credentials?|ssn)\\b|\\b(scan|search|crawl|enumerat|browse|check|look|find|locat)\\w*\\b[^.!?\\n]{0,65}\\b(downloads?|documents?|desktop|home|machine|laptop|disk|folder|director\\w*)\\b[^.!?\\n]{0,65}(\\bname\\w*[^.!?\\n]{0,25}\\b(info\\w*|personal|private|sensitive|secret|pass\\w*|cred\\w*|key|token|pci|pii|ssn|bank|card|tax|wallet|seed)s?\\b|\\b(personal|sensitive|confidential|secret|password|credential|pci|pii|ssn)s?\\b)|\\b(scan|search|crawl|enumerat|browse|list)\\w*\\b[^.!?\\n]{0,35}(\\b(downloads|desktop|my\\s+documents)\\s+(folder|dir\\w*)|(~/|/home/\\w+/|/users/\\w+/)(downloads|desktop|documents|\\.ssh|\\.aws|\\.gnupg)\\b))"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_UNAUTHORIZED_FILE_ENCRYPTION"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(encrypt(s|ed|ing|ion)?|cipher(s|ed|ing)?|encipher\\w*|aes[- ]encrypt\\w*|gpg[- ]encrypt\\w*|password[- ]protect\\w*)\\b[^.!?\\n]{0,60}(\\b([a-z0-9_/-]*[a-z0-9_-]\\.[a-z0-9]{1,8}|file|files|filepath|filename|document|documents|folder|folders|directory|directories|archive|archives|disk|drive|volume|original(\\s+one)?)\\b|(^|[\\s'\"`/\\\\])\\.env\\b)|(\\b([a-z0-9_/-]*[a-z0-9_-]\\.[a-z0-9]{1,8}|file|files|filepath|filename|document|documents|folder|folders|directory|directories)\\b|(^|[\\s'\"`/\\\\])\\.env\\b)[^.!?\\n]{0,50}\\b(encrypt(s|ed|ing|ion)?|cipher(s|ed|ing)?|encipher\\w*)\\b|\\b(openssl\\s+(enc|aes-[0-9]+-[a-z]+)|gpg\\s+(-[ce]|--encrypt|--symmetric)|zip\\s+-[a-z]*e[a-z]*\\s+\\S+|7z\\s+a\\s+[^.!?\\n]{0,40}-p|age\\s+(-e|--encrypt|-p)|cryptsetup)\\b)"
+          }
+        },
+        {
+          "infoType": {"name": "CUSTOM_SEC_UNAUTHORIZED_FILE_DELETION"},
+          "likelihood": "VERY_LIKELY",
+          "regex": {
+            "pattern": "(?i)(\\b(delet(e|es|ed|ing)|remov(e|es|ed|ing)|eras(e|es|ed|ing)|wip(e|es|ed|ing)|shred(s|ded|ding)?|unlink(s|ed|ing)?|purg(e|es|ed|ing)|destroy(s|ed|ing)?)\\b[^.!?\\n]{0,50}(\\b([a-z0-9_/-]*[a-z0-9_-]\\.[a-z0-9]{1,8}|file|files|filepath|filename|document|documents|folder|folders|directory|directories|backup|backups|archive|archives|original(\\s+one)?)\\b|(^|[\\s'\"`/\\\\])\\.(env|git|ssh|aws|bashrc|zshrc|profile)\\b)|\\b([a-z0-9_/-]*[a-z0-9_-]\\.[a-z0-9]{1,8}|file|files|folder|folders|directory|directories|document|documents|original(\\s+one)?)\\s+(is|are|be|been|get|gets|got|should\\s+be|must\\s+be|needs?\\s+to\\s+be|and)\\s+(delet(e|ed)|remov(e|ed)|eras(e|ed)|wip(e|ed)|shred(ded)?|unlink(ed)?|destroy(ed)?)\\b|\\b(rm\\s+(-[rRfIv]+\\s+)*[a-z0-9_./~*-]+|rmdir\\s+\\S+|del\\s+(/[fFqQsS]\\s+)*[a-z0-9_./\\\\*-]+|Remove-Item\\b|sdelete\\b|os\\.(remove|unlink|rmdir)|shutil\\.rmtree|fs\\.(unlink|rm)(Sync)?|\\.unlink\\s*\\())"
           }
         }
       ]

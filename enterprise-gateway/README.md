@@ -12,7 +12,7 @@ The Enterprise Gateway operates inside your Google Cloud perimeter (Cloud Run or
 flowchart LR
     Client["Antigravity Client\n(App / agy CLI / IDE / ACP)"]
     Gateway["Enterprise Gateway\n(Python FastAPI or Go 1.24)\nCloud Run / GKE"]
-    Armor["Google Cloud Model Armor\n+ Cloud SDP (DLP)\n(25 PII/PCI + 8 CUSTOM_SEC_*)"]
+    Armor["Google Cloud Model Armor\n+ Cloud SDP (DLP)\n(25 PII/PCI + 14 CUSTOM_SEC_*)"]
     Vertex["Gemini Enterprise Agent Platform\n(aiplatform.googleapis.com)\nPAYG Consumption Billing"]
 
     Client -->|"HTTPS + Bearer GATEWAY_API_KEY\nUser-Agent & X-Cost-Center"| Gateway
@@ -63,9 +63,9 @@ enterprise-gateway/
 │   └── Dockerfile                         # Hardened python:3.12-slim container build (non-root user)
 └── model-armor-sdp/                       # Google Cloud Model Armor + Cloud SDP (DLP) Security Module
     ├── README.md                          # Threat-domain coverage matrix & standalone CLI usage
-    ├── model_armor_manager.sh             # BLOCK 1..7: Provision, 5-test verify & deprovision engine
+    ├── model_armor_manager.sh             # BLOCK 1..7: Provision, 9-test verify & deprovision engine
     └── templates/
-        ├── sdp_inspect_template.json      # 25 built-in PCI/Credential/PII InfoTypes + 8 CUSTOM_SEC_* regexes
+        ├── sdp_inspect_template.json      # 25 built-in PCI/Credential/PII InfoTypes + 14 CUSTOM_SEC_* regexes
         ├── sdp_deidentify_template.json   # Cloud SDP [INFOTYPE] masking transformation spec
         └── model_armor_filters.json       # Model Armor RAI filter confidence thresholds
 ```
