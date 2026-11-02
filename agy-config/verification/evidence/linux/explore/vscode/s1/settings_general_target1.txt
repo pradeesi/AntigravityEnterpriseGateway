@@ -1,0 +1,55 @@
+http://127.0.0.1:4419/settings-standalone?extensionView=true&extensionVariant=vs-code&hostVersion=1.10.0&ideVersion=1.144.0&useWebSocket=true&hostTheme=dark&enableMicrophone=false&platform=electron&targetScreen=General&workspaceUri=file%3A%2F%2F%2Fvar%2Ftmp%2Fagyv%2Frounds%2Fexplore%2Fvscode%2Fs1%2Fhome%2Fws
+
+Settings
+General
+Appearance
+Models
+Customizations
+Not in Project
+Conversations
+?
+Account
+General
+Configure agent execution, queued message delivery, and permissions.
+Global Permissions
+Security Preset
+Controls the actions the agent can take. 
+Custom
+Outside of folders file access policy
+Configures how the agent tries to access files outside of its working folders.
+Always Ask
+Terminal Command Auto Execution
+Controls whether terminal commands require your approval before running.
+Proceed In Sandbox
+Enable Sandbox Mode
+Restricts agent tools to a secure, isolated local sandbox.
+Tool Permissions
+Modify permissions for file, terminal, and MCP tools.
+Open
+Agent Behavior
+Plan Review Policy
+Whether the agent asks you to review its documents. 
+Type / and select plan to have the agent generate a plan.
+Always Ask
+Network Permissions
+Network Access Rules
+Configure allowed and denied URLs for reading.
+Open
+Terminal & Tooling Permissions
+Commands Outside Sandbox
+Configure allowed commands outside the sandbox.
+Open
+Execution
+Queued Messages
+Configure when follow-up messages are sent.
+Queue
+Send Immediately
+Keyboard shortcuts
+Browser Subagent
+Configure the browser subagent. It requires Google Chrome to be installed. The browser subagent can be invoked by typing /browser in the conversation input box.
+Browser Javascript Execution Policy
+Controls whether the agent can run custom JavaScript to automate complex browser actions.
+Request Review
+Browser Actuation Rules
+Configure allowed and denied URLs for browser actuation.
+Edit

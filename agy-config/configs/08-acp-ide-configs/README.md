@@ -2,7 +2,10 @@
 
 ## 1. What These Files Are Used For
 
-**JetBrains IDEs** (IntelliJ IDEA, PyCharm, GoLand, WebStorm, CLion, Android Studio) and **Zed** integrate with Google Antigravity (`1.3.0+`) via the **Agent Client Protocol (ACP)** server (`agy acp` / `agy_acp_server`).
+**JetBrains IDEs** (IntelliJ IDEA, PyCharm, GoLand, WebStorm, CLion, Android Studio) and **Zed** integrate with Google Antigravity (`1.3.0+`) via the **Agent Client Protocol (ACP)** server (`agy_acp_server`).
+
+> [!IMPORTANT]
+> Live verification (2026-11): the public CLI (`agy` 1.4.12) has **no `acp` subcommand**, so `"command": "agy", "args": ["acp"]` fails. Install "Antigravity" from the ACP registry (id `antigravity-acp`) or point `command` at the standalone `agy_acp_server` with no args. The ACP server (1.4.5) ignores permission rules, `toolPermission`, sandbox keys and MCP `disabledTools` from `settings.json`/`config.json`; it honors `hooks.json` (named-group shape), `mcp_config.json`, the gateway settings, and a built-in rule that denies file reads outside the workspace.
 
 Because desktop IDEs launched from the macOS Dock, Windows Start Menu, or Linux desktop launcher **do not source interactive shell profiles** (`~/.bashrc`, `~/.zshrc`), connecting JetBrains and Zed to an Enterprise Gateway requires two coordinated files:
 
@@ -56,8 +59,8 @@ Because desktop IDEs launched from the macOS Dock, Windows Start Menu, or Linux 
 | :--- | :--- | :---: | :--- | :--- |
 | `agent_servers` | `object` | **Required** | JSON object | Root map of ACP-compatible coding agent servers configured in JetBrains or Zed. |
 | `agent_servers.Antigravity` | `object` | **Required** | JSON object | Server definition block for Google Antigravity. |
-| `agent_servers.Antigravity.command` | `string` | **Required** | Absolute binary path (e.g., `"/usr/local/bin/agy"`, `"/opt/homebrew/bin/agy_acp_server"`, `"C:\\Program Files\\Antigravity\\bin\\agy.exe"`) | Path to the Antigravity ACP server executable (`agy_acp_server` or `agy` CLI with `"args": ["acp"]`). |
-| `agent_servers.Antigravity.args` | `string[]` | Optional | `["acp"]` (when `command` points to `agy`) or `[]` (when `command` points to standalone `agy_acp_server`) | Command-line arguments passed when launching the ACP server process. |
+| `agent_servers.Antigravity.command` | `string` | **Required** | Absolute binary path (e.g., `"/usr/local/bin/agy"`, `"/opt/homebrew/bin/agy_acp_server"`, `"C:\\Program Files\\Antigravity\\bin\\agy.exe"`) | Path to the Antigravity ACP server executable (`agy_acp_server`). Public `agy` builds have no `acp` subcommand. |
+| `agent_servers.Antigravity.args` | `string[]` | Optional | `[]` (standalone `agy_acp_server`) | Command-line arguments passed when launching the ACP server process. |
 | `agent_servers.Antigravity.env` | `object` (`map<string,string>`) | **Required** *(unless set in `admin_settings.json`)* | `AGY_LLM_GATEWAY_*` key-value map | Environment variables passed directly to the ACP server child process (see below). |
 | `...env.AGY_LLM_GATEWAY_URL` | `string` | **Required** | `"https://gateway.corp.example.com"` | HTTPS base URL of your Enterprise Gateway. |
 | `...env.AGY_LLM_GATEWAY_API_KEY` | `string` | **Required** | `"agy_live_..."` | Gateway-issued Bearer token for authenticating inference requests. |

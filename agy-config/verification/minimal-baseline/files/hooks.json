@@ -1,0 +1,21 @@
+{
+  "agy-baseline-guard": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "__GUARD_COMMAND__ pre", "timeout": 20 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "__GUARD_COMMAND__ post", "timeout": 20 }
+        ]
+      }
+    ]
+  }
+}

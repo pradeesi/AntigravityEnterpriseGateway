@@ -1,0 +1,30 @@
+{
+  "userSettings": {
+    "globalPermissionGrants": {
+      "allow": [],
+      "ask": [],
+      "deny": [
+        "read_file(__HOME__/.ssh)",
+        "write_file(__HOME__/.ssh)",
+        "read_file(__HOME__/.aws)",
+        "read_file(__HOME__/.config/gcloud)",
+        "read_file(__HOME__/.gnupg)",
+        "read_file(__HOME__/.kube)",
+        "write_file(__HOME__/.gemini/config)",
+        "write_file(__HOME__/.gemini/antigravity-cli/settings.json)",
+        "write_file(__HOME__/.gemini/antigravity-acp)",
+        "write_file(__HOME__/.antigravity)",
+        "command(regex:(?i)^(sudo|su|doas|pkexec|runas)(\\.exe)?\\b.*)",
+        "command(regex:(?i)^(curl|wget|nc|ncat|netcat)(\\.exe)?\\b.*)",
+        "command(regex:(?i)^(chattr|chflags|icacls|takeown|attrib)(\\.exe)?\\b.*)",
+        "read_url(169.254.169.254)",
+        "read_url(metadata.google.internal)"
+      ]
+    },
+    "enableTerminalSandbox": true,
+    "autoExecutionPolicy": "CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX",
+    "nonWorkspaceFileAccessPolicy": "AGENT_SETTING_POLICY_ASK",
+    "browserJsExecutionPolicy": "BROWSER_JS_EXECUTION_POLICY_DISABLED",
+    "artifactReviewMode": "ARTIFACT_REVIEW_MODE_ALWAYS"
+  }
+}

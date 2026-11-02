@@ -1,0 +1,34 @@
+New Conversation
+Conversation History
+Projects
+Settings
+No Project
+
+Ask anything, @ to mention, / for actions
+
+gemini-3.8-flash
+Main Agent
+Antigravity CLI
+Settings
+General
+Appearance
+Shortcuts
+Models
+Customizations
+Not in Project
+Conversations
+Give Feedback
+?
+Account
+Back
+Tool Permissions
+Modify permissions for file, terminal, and MCP tools.
+File Access Rules
+Configure allowed and denied paths for file reads and writes.
+Open
+Terminal Commands
+Configure allowed terminal commands.
+Open
+MCP Tools
+Configure external tools via Model Context Protocol.
+Open

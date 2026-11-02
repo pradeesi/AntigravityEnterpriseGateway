@@ -1,0 +1,9 @@
+ws
+
+Ask anything, @ to mention, / for actions
+
+gemini-3.8-flash
+New Conversation
+Conversation History
+Projects
+Settings

@@ -13,6 +13,9 @@ Antigravity's browser integration enforces a **two-layer URL security model**:
 * Populating `browserAllowlist.txt` with your organization's approved domains (e.g., `localhost`, `127.0.0.1`, `docs.cloud.google.com`, `internal.corp.example.com`) and locking the file with `chattr +i` (Linux), `chflags schg` (macOS), or `icacls /deny` (Windows) prevents developers or prompt-injected agents from persisting unapproved external websites into the trusted browser list.
 * Pair `browserAllowlist.txt` with `read_url(...)` and `execute_url(...)` rules in [`settings.json`](../02-cli-settings/README.md) and [`config.json`](../03-desktop-hub-config/README.md) (plus `"browserJsExecutionPolicy": "BROWSER_JS_EXECUTION_POLICY_DISABLED"` in `config.json`) to enforce defense-in-depth across headless URL fetches (`read_url_content`), sandboxed `curl` calls, and Chrome actuation.
 
+> [!NOTE]
+> **Antigravity 2.x Architecture Note (Verified in Client Source & Live Tests):** While `browserAllowlist.txt` remains documented in public IDE docs, the Antigravity 2.x Hub (`2.28.2`) and CLI (`1.4.12`) permission stores evaluate `read_url(<domain>)` and `execute_url(<domain>)` grants in [`config.json`](../03-desktop-hub-config/README.md) and [`settings.json`](../02-cli-settings/README.md) (alongside `browserJsExecutionPolicy` in `config.json`) rather than reading `browserAllowlist.txt`. Rely on `config.json`, `settings.json`, and `hooks.json` for active URL/egress enforcement; deploying and locking `browserAllowlist.txt` is optional legacy defense-in-depth.
+
 ---
 
 ## 2. Official Public Documentation Links

@@ -1,8 +1,11 @@
-# `settings.json` — Antigravity CLI & VS Code Global Security & Sandbox Profile
+# `settings.json` — Antigravity CLI Global Security & Sandbox Profile
 
 ## 1. What This File Is Used For
 
-[`settings.json`](./settings.json) (`~/.gemini/antigravity-cli/settings.json`) is the **global configuration, terminal sandbox, and fine-grained tool permissions profile** for **Antigravity CLI (`agy`)** and IDE extensions that delegate to the CLI (**Visual Studio Code** and **Visual Studio**).
+[`settings.json`](./settings.json) (`~/.gemini/antigravity-cli/settings.json`) is the **global configuration, terminal sandbox, and fine-grained tool permissions profile** for **Antigravity CLI (`agy`)** only.
+
+> [!IMPORTANT]
+> Live verification (2026-11, CLI 1.4.12, VS Code extension 1.10.0) showed that **VS Code and Visual Studio don't read this file**: the extension starts `agy --hub --app_data_dir=antigravity`, which uses the App's settings store and reads `~/.gemini/config/config.json`. Put rules every surface must enforce in [`config.json`](../03-desktop-hub-config/README.md) `userSettings.globalPermissionGrants` (the CLI merges those too). In CLI 1.4.12, `ask` rules aren't enforced (an `allow` for the same command wins), and `agy --settings '{...}'` can drop this file's deny rules for a session; deny rules in `config.json` survive both. See [`verification/`](../../verification/README.md).
 
 When deployed and kernel-locked by an enterprise administrator, this file enforces:
 1. **Mandatory OS Terminal Sandboxing (`enableTerminalSandbox: true`)**: Isolates agent-executed shell commands inside Linux kernel namespaces (`exebox`) or macOS Seatbelt (`sandbox-exec` SBPL) profiles (and Windows 11 24H2+ AppContainer process security environments).

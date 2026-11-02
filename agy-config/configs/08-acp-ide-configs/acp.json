@@ -1,10 +1,8 @@
 {
   "agent_servers": {
     "Antigravity": {
-      "command": "/usr/local/bin/agy",
-      "args": [
-        "acp"
-      ],
+      "command": "/usr/local/bin/agy_acp_server",
+      "args": [],
       "env": {
         "AGY_LLM_GATEWAY_URL": "https://REPLACE_WITH_GATEWAY_URL",
         "AGY_LLM_GATEWAY_API_KEY": "REPLACE_WITH_GATEWAY_API_KEY",

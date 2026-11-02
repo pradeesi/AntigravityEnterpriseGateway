@@ -1,0 +1,27 @@
+New Conversation
+Conversation History
+Projects
+Settings
+No Project
+
+Ask anything, @ to mention, / for actions
+
+gemini-3.8-flash
+Main Agent
+Antigravity CLI
+Settings
+General
+Appearance
+Shortcuts
+Models
+Customizations
+Not in Project
+Conversations
+Give Feedback
+?
+Account
+Back
+Terminal Commands
+Terminal Commands
+Allow/deny specific terminal commands.
+Add

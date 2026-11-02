@@ -371,7 +371,9 @@ function Install-AndLockPolicies {
 
     # 4. hooks.json (unquoted -File path for reliable execution across Windows CLI & Desktop)
     $HooksRaw = Get-Content -LiteralPath $SrcHooks -Raw
-    $HooksWin = $HooksRaw -replace '/usr/local/bin/agy_security_guard\.sh', 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\ProgramData\\Antigravity\\bin\\agy_security_guard.ps1'
+    # Forward slashes: the JetBrains/Zed ACP server splits hook commands POSIX-style and drops backslashes
+    # ("External hook ... failed to execute" -> every tool call denied). PowerShell and the CLI accept '/'.
+    $HooksWin = $HooksRaw -replace '/usr/local/bin/agy_security_guard\.sh', 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/Antigravity/bin/agy_security_guard.ps1'
     Write-Utf8NoBom -Path "$UserHome\.gemini\config\hooks.json" -Content $HooksWin
 
     # 5. Optional JetBrains & Zed ACP configs

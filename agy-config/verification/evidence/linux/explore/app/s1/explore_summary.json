@@ -1,0 +1,74 @@
+{
+  "surface": "app",
+  "round": "/var/tmp/agyv/rounds/explore/app/s1",
+  "error": "",
+  "gemini_before": {
+    "files": [],
+    "config_json": null
+  },
+  "backend_argv": [
+    "/opt/antigravity-app/resources/bin/language_server --standalone --override_ide_name antigravity --subclient_type hub --override_ide_version 2.28.2 --override_user_agent_name antigravity --https_server_port 0 --csrf_token <masked> --app_data_dir antigravity --api_server_url https://generativelanguage.googleapis.com --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --enable_sidecars --host_bridge_url=http://127.0.0.1:32965 --host_bridge_token=<masked>"
+  ],
+  "settings_dumps": [
+    "/var/tmp/agyv/rounds/explore/app/s1/evidence/settings_general",
+    "/var/tmp/agyv/rounds/explore/app/s1/evidence/settings_tool_permissions",
+    "/var/tmp/agyv/rounds/explore/app/s1/evidence/settings_terminal_commands"
+  ],
+  "notes": [
+    "seeded App project /var/tmp/agyv/rounds/explore/app/s1/home/.gemini/config/projects/agyv-workspace.json",
+    "transient sign-in screen at startup: Welcome to Antigravity\nContinue with Google",
+    "onboarding: clicked 'Next'",
+    "onboarding: clicked 'Get started'"
+  ],
+  "driver_error": "",
+  "prompts": [],
+  "steps": [],
+  "response": "",
+  "checked_files": {},
+  "transcript": "",
+  "gemini_after": {
+    "files": [
+      "antigravity/antigravity_state.pbtxt",
+      "antigravity/bin/webm_encoder",
+      "antigravity/builtin/.checksum",
+      "antigravity/builtin/keep.txt",
+      "antigravity/builtin/skills/agy-customizations/SKILL.md",
+      "antigravity/builtin/skills/agy-customizations/docs/hooks.md",
+      "antigravity/builtin/skills/agy-customizations/docs/json_configs.md",
+      "antigravity/builtin/skills/agy-customizations/docs/mcp_servers.md",
+      "antigravity/builtin/skills/agy-customizations/docs/plugins.md",
+      "antigravity/builtin/skills/agy-customizations/docs/rules.md",
+      "antigravity/builtin/skills/agy-customizations/docs/skills.md",
+      "antigravity/builtin/skills/antigravity_guide/SKILL.md",
+      "antigravity/builtin/skills/antigravity_guide/references/app.md",
+      "antigravity/builtin/skills/antigravity_guide/references/cli.md",
+      "antigravity/builtin/skills/antigravity_guide/references/ide.md",
+      "antigravity/builtin/skills/antigravity_guide/references/sdk.md",
+      "antigravity/builtin/skills/automation/SKILL.md",
+      "antigravity/builtin/skills/generative_ui/SKILL.md",
+      "antigravity/builtin/skills/migrate-workflows/SKILL.md",
+      "antigravity/builtin/skills/permissioned-github/SKILL.md",
+      "antigravity/builtin/skills/plugin/SKILL.md",
+      "antigravity/builtin/skills/run-workflow/SKILL.md",
+      "antigravity/builtin/skills/ui-plugin-navigation/SKILL.md",
+      "antigravity/conversation_summaries.db",
+      "antigravity/installation_id",
+      "antigravity/lib/node_modules/sidecar_sdk/esm_resolver.js",
+      "antigravity/lib/node_modules/sidecar_sdk/index.mjs",
+      "antigravity/lib/node_modules/sidecar_sdk/package.json",
+      "antigravity/lib/node_modules/sidecar_sdk/preload.js",
+      "antigravity/lib/node_modules/sidecar_sdk/register_loader.js",
+      "config/.migrated",
+      "config/config.json",
+      "config/mcp_config.json",
+      "config/node_modules/sidecar_sdk/esm_resolver.js",
+      "config/node_modules/sidecar_sdk/index.mjs",
+      "config/node_modules/sidecar_sdk/package.json",
+      "config/node_modules/sidecar_sdk/preload.js",
+      "config/node_modules/sidecar_sdk/register_loader.js",
+      "config/projects/agyv-workspace.json"
+    ],
+    "config_json": "{\n  \"userSettings\": {\n    \"remoteControlHostname\": \"agy-scope-linux-quantum-axis\"\n  }\n}"
+  },
+  "evidence_dir": "/var/tmp/agyv/rounds/explore/app/s1/evidence"
+}

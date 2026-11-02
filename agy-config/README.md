@@ -5,6 +5,8 @@ Production-ready, modular workstation governance package for **Google Antigravit
 Every configuration file lives in its own dedicated module directory under [`configs/`](./configs/) alongside a comprehensive per-file `README.md` documenting **what the file does**, **official public documentation links**, **exact target OS paths**, **all allowed configuration keywords/schemas**, and **step-by-step manual Administrator lock/unlock commands**.
 
 > **Administrator Policy Cookbook**: Looking for ready-to-use recipes (blocking/allowlisting MCP servers or individual MCP tools, locking down model pickers, enforcing workspace sandboxes, configuring JetBrains/Zed ACP, or disabling Browser Subagent JS) mapped by **OS path (Linux, macOS, Windows)** and **surface (CLI, Desktop, Web Hub, IDE Plugins)**? See **[`ADMIN_POLICY_EXAMPLES.md`](./ADMIN_POLICY_EXAMPLES.md)**.
+>
+> **Live Settings-Scope & Minimal-Baseline Verification Report**: Want empirical proof of which settings files each Antigravity surface actually reads (`settings.json` vs `config.json` vs `hooks.json`), 12 live-reproduced security findings, and the smallest OS-locked baseline file set? See **[`SETTINGS_SCOPE_VERIFICATION_REPORT.md`](./SETTINGS_SCOPE_VERIFICATION_REPORT.md)** and **[`./verification/`](./verification/)**.
 
 ---
 
@@ -21,8 +23,8 @@ When Enterprise Gateway mode (`gateway.enabled: true`) is active, Antigravity by
 |    • 08-acp-ide-configs/{acp.json, ...}     --> JetBrains & Zed ACP Server Gateway Binding        |
 |                                                                                                   |
 |  [Layer 2: OS Sandbox & 595+ Fine-Grained Allow/Ask/Deny Rules (Deny > Ask > Allow)]              |
-|    • 02-cli-settings/settings.json          --> CLI & VS Code (`exebox` / `sandbox-exec` + rules) |
-|    • 03-desktop-hub-config/config.json      --> Desktop App & Web Hub (`userSettings` + grants)   |
+|    • 02-cli-settings/settings.json          --> CLI only (`exebox` / `sandbox-exec` + rules)      |
+|    • 03-desktop-hub-config/config.json      --> App, Web Hub, VS Code + CLI rules (`userSettings`)|
 |                                                                                                   |
 |  [Layer 3: Browser Subagent Two-Layer URL Control]                                                |
 |    • 04-browser-allowlist/browserAllowlist.txt --> Trusted domains + JS execution disabled        |
@@ -44,8 +46,8 @@ When Enterprise Gateway mode (`gateway.enabled: true`) is active, Antigravity by
 | # | Config Module Directory | Canonical File(s) | Target Surfaces | Detailed Per-File Guide |
 | :-: | :--- | :--- | :--- | :--- |
 | **01** | [`configs/01-admin-settings/`](./configs/01-admin-settings/) | [`admin_settings.json`](./configs/01-admin-settings/admin_settings.json) | All Surfaces (Tier-1 MDM) | [Read `01-admin-settings/README.md`](./configs/01-admin-settings/README.md) |
-| **02** | [`configs/02-cli-settings/`](./configs/02-cli-settings/) | [`settings.json`](./configs/02-cli-settings/settings.json) | CLI (`agy`), VS Code, Visual Studio | [Read `02-cli-settings/README.md`](./configs/02-cli-settings/README.md) |
-| **03** | [`configs/03-desktop-hub-config/`](./configs/03-desktop-hub-config/) | [`config.json`](./configs/03-desktop-hub-config/config.json) | Desktop App, Web Hub (`agy --hub`), CLI grants | [Read `03-desktop-hub-config/README.md`](./configs/03-desktop-hub-config/README.md) |
+| **02** | [`configs/02-cli-settings/`](./configs/02-cli-settings/) | [`settings.json`](./configs/02-cli-settings/settings.json) | CLI (`agy`) only — VS Code and Visual Studio read `config.json` (live-verified 2026-11, see `verification/`) | [Read `02-cli-settings/README.md`](./configs/02-cli-settings/README.md) |
+| **03** | [`configs/03-desktop-hub-config/`](./configs/03-desktop-hub-config/) | [`config.json`](./configs/03-desktop-hub-config/config.json) | Desktop App, Web Hub (`agy --hub`), VS Code, Visual Studio, CLI (permission rules only) | [Read `03-desktop-hub-config/README.md`](./configs/03-desktop-hub-config/README.md) |
 | **04** | [`configs/04-browser-allowlist/`](./configs/04-browser-allowlist/) | [`browserAllowlist.txt`](./configs/04-browser-allowlist/browserAllowlist.txt) | Desktop App, IDE, Web Hub, CLI `/browser` | [Read `04-browser-allowlist/README.md`](./configs/04-browser-allowlist/README.md) |
 | **05** | [`configs/05-mcp-config/`](./configs/05-mcp-config/) | [`mcp_config.json`](./configs/05-mcp-config/mcp_config.json) | Desktop App, CLI (`agy`), IDE | [Read `05-mcp-config/README.md`](./configs/05-mcp-config/README.md) |
 | **06** | [`configs/06-lifecycle-hooks/`](./configs/06-lifecycle-hooks/) | [`hooks.json`](./configs/06-lifecycle-hooks/hooks.json) | Desktop App, CLI (`agy`), IDE | [Read `06-lifecycle-hooks/README.md`](./configs/06-lifecycle-hooks/README.md) |
@@ -72,6 +74,8 @@ When Enterprise Gateway mode (`gateway.enabled: true`) is active, Antigravity by
 agy-config/
 ├── README.md                                        # Master architecture, matrix, env vars & playbooks
 ├── ADMIN_POLICY_EXAMPLES.md                         # 20 scenario-driven admin recipes by OS path & AGY surface
+├── SETTINGS_SCOPE_VERIFICATION_REPORT.md            # Live-verified surface honor matrix, 12 security findings & minimal baseline
+├── verification/                                    # Automated placement harness, minimal-baseline bundle & redacted evidence
 ├── settings.env                                     # Non-secret defaults (Gateway URL placeholder, FinOps headers, model catalog)
 ├── .env.example                                     # Template for local git-ignored `.env` secret overrides (GATEWAY_API_KEY)
 ├── .gitignore                                       # Blocks `.env*`, keys, certs, audit logs, and backup artifacts
@@ -82,7 +86,7 @@ agy-config/
 │   │   ├── admin_settings.json                      # Tier-1 MDM Gateway URL, API key, CA bundle & approved models
 │   │   └── README.md                                # OS paths, Precedence, Keyword Table & Admin Lock CLI
 │   ├── 02-cli-settings/
-│   │   ├── settings.json                            # CLI & VS Code sandbox (`enableTerminalSandbox`) + 595+ permission rules
+│   │   ├── settings.json                            # CLI-only sandbox (`enableTerminalSandbox`) + 595+ permission rules
 │   │   └── README.md                                # All 32 `settings.json` keys, 7 action selectors, MarshalSparse & Lock CLI
 │   ├── 03-desktop-hub-config/
 │   │   ├── config.json                              # Desktop App & Web Hub `userSettings` + `globalPermissionGrants`

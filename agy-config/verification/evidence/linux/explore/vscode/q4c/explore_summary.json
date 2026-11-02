@@ -1,0 +1,46 @@
+{
+  "surface": "vscode",
+  "round": "/var/tmp/agyv/rounds/explore/vscode/q4c",
+  "error": "RuntimeError('vscode: chat UI target did not appear within 90s')",
+  "gemini_before": {
+    "files": [
+      "config/config.json"
+    ],
+    "config_json": "{\n  \"userSettings\": {\n    \"globalPermissionGrants\": {\n      \"allow\": [],\n      \"ask\": [],\n      \"deny\": [\n        \"command(touch)\"\n      ]\n    }\n  }\n}"
+  },
+  "trust_before": {
+    "dialog": "",
+    "banner": "Restricted Mode is intended for safe code browsing. Trust this folder to enable all features.\nManageLearn More",
+    "title": "ws - Visual Studio Code"
+  },
+  "trust_click": "no-trust-button: ",
+  "trust_after": {
+    "dialog": "",
+    "banner": "Restricted Mode is intended for safe code browsing. Trust this folder to enable all features.\nManageLearn More",
+    "title": "ws - Visual Studio Code"
+  },
+  "workbench_on_failure": {
+    "dialog": "",
+    "banner": "Restricted Mode is intended for safe code browsing. Trust this folder to enable all features.\nManageLearn More",
+    "title": "ws - Visual Studio Code"
+  },
+  "notes": [
+    "vscode workspace trust enabled"
+  ],
+  "driver_error": "",
+  "prompts": [],
+  "steps": [],
+  "response": "",
+  "checked_files": {
+    "{WS}/cmd.marker": false
+  },
+  "transcript": "",
+  "gemini_after": {
+    "files": [
+      "bin/agy",
+      "config/config.json"
+    ],
+    "config_json": "{\n  \"userSettings\": {\n    \"globalPermissionGrants\": {\n      \"allow\": [],\n      \"ask\": [],\n      \"deny\": [\n        \"command(touch)\"\n      ]\n    }\n  }\n}"
+  },
+  "evidence_dir": "/var/tmp/agyv/rounds/explore/vscode/q4c/evidence"
+}

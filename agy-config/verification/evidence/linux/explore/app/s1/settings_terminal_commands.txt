@@ -1,0 +1,36 @@
+Antigravity
+Workspace
+View
+Window
+New Conversation
+Conversation History
+Projects
+agyv-workspace
+No conversations yet
+Settings
+agyv-workspace
+
+Ask anything, @ to mention, / for actions
+
+gemini-3.8-flash
+Local Checkout
+Main Agent
+Settings
+General
+Application
+Appearance
+Shortcuts
+Models
+Customizations
+Projects
+agyv-workspace
+Not in Project
+Conversations
+Give Feedback
+?
+Account
+Back
+Terminal Commands
+Terminal Commands
+Allow/deny specific terminal commands.
+Add

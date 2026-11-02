@@ -1,0 +1,5 @@
+{
+  "dialog": "Workspace Trust\nYou trust this folder\nAll features are enabled because trust has been granted to the workspace.\nConfigure your settings or learn more.\nIn a Trusted Folder\nYou trust the authors of the files in the current folder. All features are enabled:\nTasks are allowed to run\nDebugging is enabled\nAll workspace settings are applied\nAll enabled extensions are activated\nIn Restricted Mode\nYou do not trust the authors of the files in the current folder. The following features are disabled:\nTasks are not allowed to run\nDebugging is disabled\n94 workspace settings are not applied\n12 extensions are disabled or have limited functionality\nDon't Trust\nCtrl+Enter\nTrusted Folders & Workspaces\nYou trust the following folders, their subfolders, and workspace files.\nHost\nPath\nLocal\n/var/tmp/agyv/rounds/explore/vscode/q4e/home/ws\nAdd Folder",
+  "banner": "",
+  "title": "ws - Visual Studio Code"
+}

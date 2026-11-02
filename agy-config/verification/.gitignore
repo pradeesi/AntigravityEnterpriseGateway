@@ -1,0 +1,37 @@
+# ==============================================================================
+# .gitignore — agy-config/verification
+# Purpose: keep secrets, raw evidence and local build output out of git.
+# ==============================================================================
+
+# Secrets and environment files (gateway API key, local overrides)
+.env
+.env.*
+!.env.example
+settings.env
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*service-account*.json
+secrets/
+
+# Raw evidence copied from the test VMs (only redacted summaries are committed)
+evidence/raw/
+**/rounds/
+**/captures/
+*.png
+*.webm
+
+# Python build/runtime artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -6,7 +6,10 @@
 
 Hooks execute custom scripts or shell commands at deterministic points in the agent loop — receiving full JSON context (`conversationId`, `workspacePaths`, `modelName`, `toolCall.name`, `toolCall.args`) on `stdin` — without interfering with commands typed manually by the human developer in their own terminal.
 
-In this enterprise security configuration, [`hooks.json`](./hooks.json) wires every tool invocation (`"matcher": ".*"`) into our hardened OS guard scripts ([`agy_security_guard.sh` / `agy_security_guard.ps1`](../07-security-guard-scripts/README.md)):
+> [!IMPORTANT]
+> Live verification (2026-11) showed two format rules. **(1) Use a named hook group** (`{"agy-security-guard": {"enabled": true, "PreToolUse": [...]}}`): the earlier `{"hooks": {"PreToolUse": [...]}}` shape worked on the CLI but was **ignored by the JetBrains/Zed ACP server**. **(2) On Windows, write the guard path with forward slashes** (`-File C:/ProgramData/Antigravity/bin/agy_security_guard.ps1`): the ACP server splits hook commands POSIX-style, drops backslashes, reports "External hook ... failed to execute" and then denies every tool call. `hooks.json` is the only file-based control the ACP server honors.
+
+In this enterprise security configuration, [`hooks.json`](./hooks.json) wires every tool invocation (`"matcher": ""`) into our hardened OS guard scripts ([`agy_security_guard.sh` / `agy_security_guard.ps1`](../07-security-guard-scripts/README.md)):
 1. **`PreToolUse` (Active Policy Blocker)**: Fires *before* any tool (`run_command`, `view_file`, `write_to_file`, `replace_file_content`, `read_url_content`, `call_mcp_tool`, etc.) executes. Inspects the full serialized `toolCall` arguments for destructive file deletions, credential/SAM/shadow reads, network probing (`ssh`/`nc`/`ping`), exploit tools (`nmap`/`sqlmap`/`mimikatz`), or cloud metadata SSRF (`169.254.169.254`), and immediately aborts execution on policy match.
    * *Critical on Windows*: On Windows 10, Windows Server, or pre-24H2 Windows 11 builds where native OS terminal sandboxing is unavailable, `PreToolUse` acts as the primary synchronous command-payload gatekeeper!
 2. **`PostToolUse` (SIEM / Compliance Telemetry Logger)**: Fires immediately *after* each tool call completes (capturing `error` status if any) and appends structured JSONL audit records for Splunk, Google SecOps (Chronicle), or Datadog ingestion.
@@ -16,7 +19,7 @@ In this enterprise security configuration, [`hooks.json`](./hooks.json) wires ev
 * **Global Location Only**: Always place global hooks in `~/.gemini/config/hooks.json`. Hooks placed inside `~/.gemini/antigravity-cli/settings.json` are **ignored** by Antigravity CLI.
 * **Windows Command Path Quoting Rule**: On Windows, configure the handler `command` without escaped inner quotes around the space-free script path:
   ```json
-  "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\ProgramData\\Antigravity\\bin\\agy_security_guard.ps1 pre"
+  "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/ProgramData/Antigravity/bin/agy_security_guard.ps1 pre"
   ```
   *(Our [`deploy_and_lock_windows.ps1`](../../scripts/deploy_and_lock_windows.ps1) script performs this exact rewrite automatically.)*
 

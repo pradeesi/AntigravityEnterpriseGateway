@@ -1,0 +1,70 @@
+{
+  "surface": "vscode",
+  "round": "/var/tmp/agyv/rounds/explore/vscode/s1",
+  "error": "",
+  "gemini_before": {
+    "files": [],
+    "config_json": null
+  },
+  "backend_argv": [
+    "/var/tmp/agyv/rounds/explore/vscode/s1/home/.gemini/bin/agy --hub --hub-port=4419 --app_data_dir=antigravity --csrf_token=<masked> --add-dir=/var/tmp/agyv/rounds/explore/vscode/s1/home/ws"
+  ],
+  "settings_dumps": [
+    "/var/tmp/agyv/rounds/explore/vscode/s1/evidence/settings_general",
+    "/var/tmp/agyv/rounds/explore/vscode/s1/evidence/settings_general_target1.txt",
+    "/var/tmp/agyv/rounds/explore/vscode/s1/evidence/settings_tool_permissions",
+    "/var/tmp/agyv/rounds/explore/vscode/s1/evidence/settings_tool_permissions_target1.txt",
+    "/var/tmp/agyv/rounds/explore/vscode/s1/evidence/settings_terminal_commands",
+    "/var/tmp/agyv/rounds/explore/vscode/s1/evidence/settings_terminal_commands_target1.txt"
+  ],
+  "notes": [
+    "vscode workspace trust disabled (--disable-workspace-trust)",
+    "onboarding: clicked 'Get started'"
+  ],
+  "driver_error": "",
+  "prompts": [],
+  "steps": [],
+  "response": "",
+  "checked_files": {},
+  "transcript": "",
+  "gemini_after": {
+    "files": [
+      "antigravity/antigravity_state.pbtxt",
+      "antigravity/bin/webm_encoder",
+      "antigravity/builtin/.checksum",
+      "antigravity/builtin/.manifest",
+      "antigravity/builtin/keep.txt",
+      "antigravity/builtin/skills/agy-customizations/SKILL.md",
+      "antigravity/builtin/skills/agy-customizations/docs/hooks.md",
+      "antigravity/builtin/skills/agy-customizations/docs/json_configs.md",
+      "antigravity/builtin/skills/agy-customizations/docs/mcp_servers.md",
+      "antigravity/builtin/skills/agy-customizations/docs/plugins.md",
+      "antigravity/builtin/skills/agy-customizations/docs/rules.md",
+      "antigravity/builtin/skills/agy-customizations/docs/skills.md",
+      "antigravity/builtin/skills/antigravity_guide/SKILL.md",
+      "antigravity/builtin/skills/antigravity_guide/references/app.md",
+      "antigravity/builtin/skills/antigravity_guide/references/cli.md",
+      "antigravity/builtin/skills/antigravity_guide/references/ide.md",
+      "antigravity/builtin/skills/antigravity_guide/references/sdk.md",
+      "antigravity/builtin/skills/automation/SKILL.md",
+      "antigravity/builtin/skills/generative_ui/SKILL.md",
+      "antigravity/builtin/skills/migrate-workflows/SKILL.md",
+      "antigravity/builtin/skills/permissioned-github/SKILL.md",
+      "antigravity/builtin/skills/plugin/SKILL.md",
+      "antigravity/builtin/skills/run-workflow/SKILL.md",
+      "antigravity/builtin/skills/ui-plugin-navigation/SKILL.md",
+      "antigravity/cli.log",
+      "antigravity/conversation_summaries.db",
+      "antigravity/installation_id",
+      "antigravity/log/cli-20261101_125751.log",
+      "bin/agy",
+      "bin/agy.version.json",
+      "config/.migrated",
+      "config/config.json",
+      "config/mcp_config.json",
+      "logs/install.log"
+    ],
+    "config_json": "{\n  \"userSettings\": {\n    \"remoteControlHostname\": \"agy-scope-linux-dark-shard\"\n  }\n}"
+  },
+  "evidence_dir": "/var/tmp/agyv/rounds/explore/vscode/s1/evidence"
+}
